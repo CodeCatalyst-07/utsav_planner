@@ -8,6 +8,20 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['tests/unit/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['src/domain/**/*.ts'],
+      exclude: [
+        'src/domain/fixtures/**',
+        'src/domain/index.ts',
+        'src/domain/config/types.ts',
+        'src/domain/**/README.md',
+      ],
+      thresholds: {
+        lines: 90,
+      },
+    },
   },
   resolve: {
     alias: {

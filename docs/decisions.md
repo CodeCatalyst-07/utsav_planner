@@ -107,3 +107,50 @@ Modern web security requires strict Content Security Policies (CSP) to mitigate 
 
 - Protects against unauthorized iframe framing, MIME sniffing, and external script injection.
 - Preserves smooth development hot-reloading and production hydration.
+
+---
+
+## ADR-005: Integer Rupee Arithmetic & Largest Remainder Allocation
+
+### Status
+
+Accepted
+
+### Context
+
+Floating point arithmetic in JavaScript creates fractional rounding anomalies (e.g. `0.1 + 0.2 = 0.30000000000000004`) and unallocated or over-allocated paise. In celebration budgets, users expect integer rupee line items whose sum equals their total budget to the exact rupee.
+
+### Decision
+
+1. All monetary inputs and outputs in `src/domain/` are represented as whole integer rupees (`Math.round()` on entry).
+2. Weight-based percentage budget splits use the **Largest Remainder (Hamilton / Hare-Niemeyer)** algorithm (`allocateLargestRemainder`), guaranteeing `sum(lines) === total` with deterministic tie-breaking by index.
+3. Currency formatting strictly utilizes the Indian numbering grouping (`₹12,34,567`) with an accessible spoken conversion (`inrSpoken`) for screen readers.
+
+### Consequences
+
+- Guarantees 0 unallocated rupees across any budget allocation.
+- Avoids floating-point discrepancies across Vercel serverless runtimes.
+
+---
+
+## ADR-006: Injected "today" Parameter & UTC Date-Only Arithmetic
+
+### Status
+
+Accepted
+
+### Context
+
+Calling `new Date()` or `Date.now()` inside domain functions causes non-determinism, breaks property-based testing, and induces timezone drift (e.g., local server time vs IST midnight shifts where a day boundary shifts an event offset).
+
+### Decision
+
+1. Domain functions are **pure**: calling `new Date()`, `Date.now()`, or `Math.random()` inside `src/domain/` is strictly forbidden.
+2. The current date (`today`) is passed as an explicit `YYYY-MM-DD` parameter to all timeline and validation functions.
+3. Date arithmetic (`daysBetween`, `addDays`) operates purely in UTC on calendar day counts (`Date.UTC(y, m-1, d)`), eliminating daylight saving, IST offset anomalies, and leap-year drift.
+4. An ESLint rule (`no-restricted-imports`) guarantees that `src/domain/` cannot import framework packages (`next`, `react`, `server-only`, or `src/server`).
+
+### Consequences
+
+- 100% reproducible test snapshots and deterministic replanning diffs.
+- Clean isolation between platform time and domain calculations.
