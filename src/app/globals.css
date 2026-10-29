@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #fff8f0;
+    --ink: #2b1b17;
+    --primary: #7a1f3d;
+    --secondary: #0f766e;
+    --accent: #f59e0b;
+    --surface: #ffffff;
+    --surface-border: #eadccb;
+    --danger: #b42318;
+    --warning: #b54708;
+  }
+
+  /* Global HTML and Body defaults */
+  html {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family:
+      var(--font-inter),
+      system-ui,
+      -apple-system,
+      sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Accessible high-contrast focus rings (exceeds 3:1 contrast requirement) */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  /* Global respect for prefers-reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Minimum 44px touch target utility */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
