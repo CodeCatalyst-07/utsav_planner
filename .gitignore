@@ -26,6 +26,8 @@ playwright/.cache/
 # Phase and build reports
 PHASE*.md
 docs/phase*.md
+*REPORT.md
+docs/*report*.md
 
 # OS and IDE files
 .DS_Store
