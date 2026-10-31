@@ -17,15 +17,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz | sudo tar -xz -C /usr/local/bin gitleaks
+
       - name: Secret Scan with Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gitleaks detect --verbose
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 12
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
