@@ -23,6 +23,10 @@ playwright-report/
 blob-report/
 playwright/.cache/
 
+# Phase and build reports
+PHASE*.md
+docs/phase*.md
+
 # OS and IDE files
 .DS_Store
 *.pem

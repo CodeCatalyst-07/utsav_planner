@@ -11,6 +11,7 @@ import { ReasoningMode } from '../sections';
 
 export interface AIMetadata {
   provider: ProviderName;
+  model: string | null;
   attempts: number;
   repaired: boolean;
   fallbackReason?: string;

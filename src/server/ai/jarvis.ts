@@ -117,6 +117,10 @@ export class JarvisProvider implements LLMProvider {
     return Boolean(this.client || this.apiKey);
   }
 
+  getModel(): string {
+    return this.model;
+  }
+
   async generateJson(req: GenerateJsonRequest): Promise<GenerateJsonResponse> {
     if (!this.client) {
       throw new ProviderError({

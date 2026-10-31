@@ -88,6 +88,7 @@ export class FailoverChain {
           data: cached,
           meta: buildChainMeta({
             provider: 'jarvis',
+            model: this.jarvis.getModel(),
             attempts: 0,
             repaired: false,
             startTime,
@@ -231,6 +232,7 @@ export class FailoverChain {
           data: finalData,
           meta: buildChainMeta({
             provider: candidate.name,
+            model: candidate.name === 'jarvis' ? this.jarvis.getModel() : this.gemini.getModel(),
             attempts,
             repaired: wasRepaired || candidateResult.repaired,
             startTime,
@@ -254,6 +256,7 @@ export class FailoverChain {
       data: fallbackData,
       meta: buildChainMeta({
         provider: 'template',
+        model: null,
         attempts,
         repaired: false,
         fallbackReason: fallbackReason || 'All providers exhausted or unconfigured',

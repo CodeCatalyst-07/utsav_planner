@@ -42,6 +42,9 @@ jobs:
       - name: Prettier Format Check
         run: pnpm format
 
+      - name: Documentation Link Integrity Check
+        run: pnpm check:links
+
       - name: TypeScript Typecheck
         run: pnpm typecheck
 

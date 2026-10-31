@@ -19,11 +19,13 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
   let fakeJarvis: {
     name: 'jarvis';
     isConfigured: () => boolean;
+    getModel: () => string;
     generateJson: ReturnType<typeof vi.fn>;
   };
   let fakeGemini: {
     name: 'gemini';
     isConfigured: () => boolean;
+    getModel: () => string;
     generateJson: ReturnType<typeof vi.fn>;
   };
   let jarvisBreaker: CircuitBreaker;
@@ -40,12 +42,14 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
     fakeJarvis = {
       name: 'jarvis',
       isConfigured: () => true,
+      getModel: () => 'gemma-4-31b-it',
       generateJson: vi.fn(),
     };
 
     fakeGemini = {
       name: 'gemini',
       isConfigured: () => true,
+      getModel: () => 'gemini-2.5-flash',
       generateJson: vi.fn(),
     };
   });
@@ -626,5 +630,56 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
     expect(res.data).toEqual({ theme: 'Royal Heritage' });
     expect(res.meta.provider).toBe('jarvis');
     expect(criticMock.evaluateSections).toHaveBeenCalledTimes(1);
+  });
+
+  describe('meta.model contract across providers', () => {
+    it('sets meta.model to Jarvis model id when provider is jarvis', async () => {
+      fakeJarvis.generateJson.mockResolvedValueOnce({ text: validThemeJson });
+
+      const chain = createChain();
+      const res = await chain.executeSection({
+        section: 'ideas',
+        schema: testSchema,
+        promptBuilder: () => ({ system: 'sys', user: 'usr' }),
+        fallbackGetter,
+      });
+
+      expect(res.meta.provider).toBe('jarvis');
+      expect(res.meta.model).toBe('gemma-4-31b-it');
+    });
+
+    it('sets meta.model to Gemini model id when provider is gemini', async () => {
+      // Force gemini provider
+      fakeGemini.generateJson.mockResolvedValueOnce({ text: validThemeJson });
+
+      const chain = createChain();
+      const res = await chain.executeSection({
+        section: 'ideas',
+        schema: testSchema,
+        promptBuilder: () => ({ system: 'sys', user: 'usr' }),
+        fallbackGetter,
+        forceProvider: 'gemini',
+      });
+
+      expect(res.meta.provider).toBe('gemini');
+      expect(res.meta.model).toBe('gemini-2.5-flash');
+    });
+
+    it('sets meta.model to null when falling back to template', async () => {
+      // Both fail -> template fallback
+      fakeJarvis.generateJson.mockRejectedValue(new Error('Jarvis down'));
+      fakeGemini.generateJson.mockRejectedValue(new Error('Gemini down'));
+
+      const chain = createChain();
+      const res = await chain.executeSection({
+        section: 'ideas',
+        schema: testSchema,
+        promptBuilder: () => ({ system: 'sys', user: 'usr' }),
+        fallbackGetter,
+      });
+
+      expect(res.meta.provider).toBe('template');
+      expect(res.meta.model).toBeNull();
+    });
   });
 });

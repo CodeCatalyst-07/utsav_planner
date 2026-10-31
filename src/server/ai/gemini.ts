@@ -208,6 +208,10 @@ export class GeminiProvider implements LLMProvider {
     return Boolean(this.client || (this.apiKey && this.model));
   }
 
+  getModel(): string {
+    return this.model;
+  }
+
   async generateJson(req: GenerateJsonRequest): Promise<GenerateJsonResponse> {
     if (!this.client || !this.model) {
       throw new ProviderError({

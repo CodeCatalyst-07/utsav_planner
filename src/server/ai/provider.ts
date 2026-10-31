@@ -58,5 +58,6 @@ export interface GenerateJsonResponse {
 
 export interface LLMProvider {
   readonly name: 'jarvis' | 'gemini';
+  getModel?(): string;
   generateJson(req: GenerateJsonRequest): Promise<GenerateJsonResponse>;
 }
