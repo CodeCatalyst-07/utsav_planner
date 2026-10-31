@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { computeBudget } from '@/domain/rules/budget';
 import { indiaLocalePack } from '@/domain/config/in';
-import { EventProfile, EventType } from '@/domain/schemas/profile';
+import { EventProfile, EventType, CityTier, BudgetTier } from '@/domain/schemas/profile';
 
 describe('Budget Engine (src/domain/rules/budget.ts)', () => {
   const baseProfile: EventProfile = {
@@ -144,18 +144,188 @@ describe('Budget Engine (src/domain/rules/budget.ts)', () => {
     }
   });
 
-  it('suggests cheaper alternative tiers for premium budget tier when over catering budget', () => {
+  it('suggests budget tier for premium profile when mid tier is over but budget tier fits (lines 307-309)', () => {
+    // 150 guests, 2 functions (258.75 units).
+    // Mid tier band mid = 2000 => 517,500.
+    // Budget tier band mid = 1200 => 310,500.
+    // With totalBudget = 1,800,000, catering allocation (25%) = 450,000.
+    // Allocation 450,000 < Mid mid (517,500) -> Mid is over!
+    // Allocation 450,000 > Budget mid (310,500) -> Budget is tight/ok!
+    const premiumToBudgetProfile: EventProfile = {
+      ...baseProfile,
+      budgetTier: 'premium',
+      totalBudgetInr: 1_800_000,
+      guestCount: 150,
+    };
+
+    const result = computeBudget(premiumToBudgetProfile, indiaLocalePack);
+    expect(result.estimates.catering.status).toBe('over');
+    expect(result.estimates.catering.suggestions?.alternativeTier).toBe('budget');
+  });
+
+  it('suggests cheaper alternative tiers for premium budget tier when over catering budget and tier fits', () => {
     const premiumOverProfile: EventProfile = {
       ...baseProfile,
       budgetTier: 'premium',
-      totalBudgetInr: 1_200_000,
-      guestCount: 300,
+      totalBudgetInr: 3_000_000,
+      guestCount: 150,
     };
 
     const result = computeBudget(premiumOverProfile, indiaLocalePack);
     expect(result.estimates.catering.status).toBe('over');
-    expect(result.estimates.catering.suggestions?.alternativeTier).toBeDefined();
-    expect(['mid', 'budget']).toContain(result.estimates.catering.suggestions?.alternativeTier);
+    expect(result.estimates.catering.suggestions?.alternativeTier).toBe('mid');
+
+    // Recomputing with suggested tier yields ok or tight, improving status
+    const recomputed = computeBudget(
+      {
+        ...premiumOverProfile,
+        budgetTier: result.estimates.catering.suggestions!.alternativeTier!,
+      },
+      indiaLocalePack
+    );
+    expect(['ok', 'tight']).toContain(recomputed.estimates.catering.status);
+  });
+
+  it('does NOT suggest alternative tier if recomputing still yields over (e.g. stressed wedding)', () => {
+    const stressedProfile: EventProfile = {
+      ...baseProfile,
+      budgetTier: 'mid',
+      totalBudgetInr: 2_500_000,
+      guestCount: 300,
+      functionsCount: 3,
+    };
+
+    const result = computeBudget(stressedProfile, indiaLocalePack);
+    expect(result.estimates.catering.status).toBe('over');
+    // For 300 guests with 3 functions at 25L, budget tier mid is 721,050 vs allocation 625,000 -> still over
+    expect(result.estimates.catering.suggestions?.alternativeTier).toBeUndefined();
+  });
+
+  it('PROPERTY TEST: every returned suggestion, when applied, improves the status', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<EventType>('wedding', 'birthday_kids', 'birthday_adult'),
+        fc.integer({ min: 50_000, max: 20_000_000 }),
+        fc.integer({ min: 10, max: 1000 }),
+        fc.constantFrom<CityTier>('tier1', 'tier2', 'tier3'),
+        fc.constantFrom<BudgetTier>('budget', 'mid', 'premium'),
+        (eventType, totalBudgetInr, guestCount, cityTier, budgetTier) => {
+          const testProfile: EventProfile = {
+            eventType,
+            eventDate: '2027-02-14',
+            cityTier,
+            cityName: 'Test City',
+            guestCount,
+            totalBudgetInr,
+            budgetTier,
+            venueType: 'lawn',
+            functionsCount: 2,
+            dietary: { veg: guestCount, nonVeg: 0, jain: 0, vegan: 0 },
+            toggles: { venueIncluded: false, includeAttireJewellery: true },
+            overrides: {},
+            notes: '',
+          };
+          const initial = computeBudget(testProfile, indiaLocalePack);
+          const suggestion = initial.estimates.catering.suggestions?.alternativeTier;
+          if (suggestion) {
+            const recomputed = computeBudget(
+              { ...testProfile, budgetTier: suggestion },
+              indiaLocalePack
+            );
+            const statusRank = { over: 0, tight: 1, ok: 2 };
+            expect(recomputed.estimates.catering.status).not.toBe('over');
+            expect(statusRank[recomputed.estimates.catering.status]).toBeGreaterThan(
+              statusRank[initial.estimates.catering.status]
+            );
+          }
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('falls back to default band (500-1000) when catering bands are missing for cityTier/budgetTier (lines 251-253)', () => {
+    const packWithMissingBands = {
+      ...indiaLocalePack,
+      cateringBands: {
+        ...indiaLocalePack.cateringBands,
+        tier1: {} as any,
+      },
+    };
+    const result = computeBudget(baseProfile, packWithMissingBands);
+    expect(result.estimates.catering.perPlateMin).toBe(500);
+    expect(result.estimates.catering.perPlateMax).toBe(1000);
+    expect(result.estimates.catering.perPlateMid).toBe(750);
+  });
+
+  it('evaluates contingencyMeetsFloor as false when contingency line is omitted from budget splits (line 328)', () => {
+    const packWithoutContingency = {
+      ...indiaLocalePack,
+      budgetSplits: {
+        ...indiaLocalePack.budgetSplits,
+        wedding: indiaLocalePack.budgetSplits.wedding.filter((l) => l.id !== 'contingency'),
+      },
+    };
+    const result = computeBudget(baseProfile, packWithoutContingency);
+    expect(result.invariants.contingencyMeetsFloor).toBe(false);
+  });
+
+  it('reports contingencyMeetsFloor as false when an explicit override drops contingency below floor', () => {
+    const profileWithLowContingency: EventProfile = {
+      ...baseProfile,
+      overrides: {
+        contingency: 1000, // floor for 25L is 5% = 125,000
+      },
+    };
+    const result = computeBudget(profileWithLowContingency, indiaLocalePack);
+    expect(result.invariants.contingencyMeetsFloor).toBe(false);
+    const contingencyLine = result.lines.find((l) => l.id === 'contingency');
+    expect(contingencyLine?.amount).toBe(1000);
+  });
+
+  it('absorbs budget difference into adjustTarget when only overridden items exist below total budget (lines 225-240)', () => {
+    const singleCategoryPack = {
+      ...indiaLocalePack,
+      budgetSplits: {
+        ...indiaLocalePack.budgetSplits,
+        wedding: [
+          {
+            id: 'catering',
+            label: 'Catering',
+            weight: 100,
+            source: 'assumption' as const,
+          },
+        ],
+      },
+    };
+
+    const profile: EventProfile = {
+      ...baseProfile,
+      totalBudgetInr: 1_000_000,
+      overrides: {
+        catering: 800_000, // overridden below total, no dynamic items remaining
+      },
+    };
+
+    const result = computeBudget(profile, singleCategoryPack);
+    expect(result.invariants.sumEqualsTotal).toBe(true);
+    expect(result.lines[0]!.amount).toBe(1_000_000);
+    expect(result.lines[0]!.percent).toBe(100);
+  });
+
+  it('handles overrides exceeding total budget gracefully with contingency at 0', () => {
+    const profileWithExcessiveOverrides: EventProfile = {
+      ...baseProfile,
+      totalBudgetInr: 1_000_000,
+      overrides: {
+        catering: 700_000,
+        venue: 500_000, // total overrides = 1,200,000 > 1,000,000
+      },
+    };
+    const result = computeBudget(profileWithExcessiveOverrides, indiaLocalePack);
+    expect(result.lines.find((l) => l.id === 'contingency')?.amount).toBe(0);
+    expect(result.invariants.contingencyMeetsFloor).toBe(false);
+    expect(result.invariants.noNegativeLines).toBe(true);
   });
 
   it('PROPERTY TEST: sum(lines) === total and no negative lines across random profiles and overrides', () => {

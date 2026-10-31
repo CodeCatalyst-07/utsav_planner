@@ -1,5 +1,5 @@
 import { BasePlan, buildPlan } from './plan';
-import { validateProfile, ValidationError } from '../schemas/profile';
+import { validateProfile, ValidationError, scaleDietary, Dietary } from '../schemas/profile';
 import { LocalePack } from '../config/types';
 import { indiaLocalePack } from '../config/in';
 import { daysBetween } from '../dates';
@@ -50,13 +50,20 @@ export function replan(
 ): ReplanResult {
   // Merge current profile with patch
   const current = currentPlan.profile;
+  let dietary = {
+    ...current.dietary,
+    ...(patch.dietary && typeof patch.dietary === 'object'
+      ? (patch.dietary as Partial<Dietary>)
+      : {}),
+  };
+  if (typeof patch.guestCount === 'number' && !patch.dietary) {
+    dietary = scaleDietary(dietary, patch.guestCount);
+  }
+
   const mergedInput = {
     ...current,
     ...patch,
-    dietary: {
-      ...current.dietary,
-      ...(patch.dietary && typeof patch.dietary === 'object' ? patch.dietary : {}),
-    },
+    dietary,
     toggles: {
       ...current.toggles,
       ...(patch.toggles && typeof patch.toggles === 'object' ? patch.toggles : {}),

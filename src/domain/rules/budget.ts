@@ -281,20 +281,35 @@ export function computeBudget(profile: EventProfile, pack: LocalePack): BudgetRe
 
   let suggestions: CateringSuggestions | undefined;
   if (cateringStatus !== 'ok') {
+    const statusRank: Record<'over' | 'tight' | 'ok', number> = { over: 0, tight: 1, ok: 2 };
+
+    const evaluateTierStatus = (candidateTier: BudgetTier): 'ok' | 'tight' | 'over' => {
+      const candidateBands = pack.cateringBands[profile.cityTier]?.[candidateTier];
+      if (!candidateBands) return 'over';
+      const cMid = Math.round(((candidateBands.min + candidateBands.max) / 2) * totalCateringUnits);
+      const cHigh = Math.round(candidateBands.max * totalCateringUnits);
+      if (cateringAllocation < cMid) {
+        return 'over';
+      } else if (cateringAllocation < cHigh) {
+        return 'tight';
+      }
+      return 'ok';
+    };
+
     let alternativeTier: BudgetTier | undefined;
     if (profile.budgetTier === 'premium') {
-      const midBands = pack.cateringBands[profile.cityTier]?.mid;
-      if (midBands) {
-        const midCost = Math.round(((midBands.min + midBands.max) / 2) * totalCateringUnits);
-        if (midCost <= cateringAllocation) {
-          alternativeTier = 'mid';
-        } else {
+      const midStatus = evaluateTierStatus('mid');
+      if (midStatus !== 'over' && statusRank[midStatus] > statusRank[cateringStatus]) {
+        alternativeTier = 'mid';
+      } else {
+        const budgetStatus = evaluateTierStatus('budget');
+        if (budgetStatus !== 'over' && statusRank[budgetStatus] > statusRank[cateringStatus]) {
           alternativeTier = 'budget';
         }
       }
     } else if (profile.budgetTier === 'mid') {
-      const budgetBands = pack.cateringBands[profile.cityTier]?.budget;
-      if (budgetBands) {
+      const budgetStatus = evaluateTierStatus('budget');
+      if (budgetStatus !== 'over' && statusRank[budgetStatus] > statusRank[cateringStatus]) {
         alternativeTier = 'budget';
       }
     }

@@ -1,9 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Fraunces, Inter } from 'next/font/google';
 import './globals.css';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { AppNav } from '@/components/layout/nav';
+import { SampleBanner } from '@/components/layout/sample-banner';
+import { PlanProvider } from '@/context/plan-context';
 import { BRAND_DISCLAIMER, BRAND_NAME, BRAND_TAGLINE } from '@/lib/brand';
 
 const fraunces = Fraunces({
@@ -19,6 +21,10 @@ const inter = Inter({
   display: 'swap',
   fallback: ['system-ui', '-apple-system', 'sans-serif'],
 });
+
+export const viewport: Viewport = {
+  themeColor: '#7A1F3D',
+};
 
 export const metadata: Metadata = {
   title: `${BRAND_NAME} - ${BRAND_TAGLINE}`,
@@ -41,14 +47,17 @@ export default function RootLayout({
           Skip to main content
         </a>
 
-        <Header />
+        <PlanProvider>
+          <Header />
+          <SampleBanner />
 
-        <div className="flex flex-1 flex-col">{children}</div>
+          <div className="flex flex-1 flex-col">{children}</div>
 
-        <Footer />
+          <Footer />
 
-        {/* Global mobile bottom navigation for <1024px */}
-        <AppNav variant="mobile-bottom" />
+          {/* Global mobile bottom navigation for <1024px */}
+          <AppNav variant="mobile-bottom" />
+        </PlanProvider>
       </body>
     </html>
   );

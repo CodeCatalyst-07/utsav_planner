@@ -1,4 +1,7 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
+
+const baseURL = process.env.BASE_URL || 'http://localhost:3000';
+const hasExplicitBaseUrl = Boolean(process.env.BASE_URL);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -28,12 +31,16 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    stdout: 'ignore',
-    stderr: 'pipe',
-    timeout: 120 * 1000,
-  },
+  // When BASE_URL is explicitly set (e.g. testing against deployed production Vercel URL),
+  // Playwright must not start its own local webServer.
+  webServer: hasExplicitBaseUrl
+    ? undefined
+    : {
+        command: 'pnpm dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: !process.env.CI,
+        stdout: 'ignore',
+        stderr: 'pipe',
+        timeout: 120 * 1000,
+      },
 });

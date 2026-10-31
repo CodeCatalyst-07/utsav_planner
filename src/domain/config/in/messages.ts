@@ -13,12 +13,14 @@ export const flagMessages = {
     `Total budget per guest (${p.perHead}) is below the typical baseline threshold (${p.minThreshold}) for this celebration type.`,
   contingency_below_floor: (p: { actualPercent: number; floorPercent: number }) =>
     `Contingency reserve is currently at ${p.actualPercent.toFixed(1)}%, which is below the recommended ${p.floorPercent}% safety floor.`,
-  dietary_mismatch: (p: { detail: string }) =>
-    `Specific dietary requirements identified (${p.detail}). Dedicated preparation counters or labeled buffet sections advised.`,
+  special_diet_counters: (p: { detail: string }) =>
+    `Special dietary requirements specified (${p.detail}). Dedicated preparation counters or labeled buffet sections advised.`,
   wedding_muhurat_verify: () =>
     `Confirm final ceremony timings and muhurat with your family priest or regional panchang. This application provides scheduling assistance, not astrological or religious endorsements.`,
   community_permissions_verify: () =>
     `Public and society festivals require clearances from local municipal bodies, police stations, electricity providers, and fire safety officers. Confirm jurisdiction-specific rules locally.`,
+  catch_up_needed: (p: { count: number; criticalCount: number }) =>
+    `Catch-up required: ${p.count} planning milestone${p.count === 1 ? '' : 's'} (${p.criticalCount} critical) were scheduled before today and need immediate attention.`,
 };
 
 export type FlagCode = keyof typeof flagMessages;

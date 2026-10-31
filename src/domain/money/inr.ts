@@ -135,3 +135,56 @@ export function allocateLargestRemainder(total: number, weights: readonly number
 
   return items.map((item) => item.integerPart);
 }
+
+/**
+ * Parses user-entered rupee amount strings into integer rupees.
+ * Supports:
+ * - Lakhs: "5 lakh", "5.5 lakhs", "5 lac", "5 lacs", "5l"
+ * - Crores: "2 crore", "1.5 crores", "2 cr", "2cr"
+ * - Thousands: "50k", "50 k", "50 thousand"
+ * - Standard/Indian grouping: "Rs 5,00,000", "₹5,00,000", "5,00,000", "500000"
+ * Returns positive integer or null if invalid/unparseable.
+ */
+export function parseInrAmount(input: string): number | null {
+  if (!input || typeof input !== 'string') return null;
+  const clean = input
+    .trim()
+    .toLowerCase()
+    .replace(/[₹]|rs\.?|rupees?/gi, '')
+    .trim();
+  if (!clean) return null;
+
+  // 1. Crores
+  const crMatch = clean.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:crores?|cr)\b/i);
+  if (crMatch) {
+    const val = parseFloat(crMatch[1]!);
+    if (isNaN(val) || val <= 0) return null;
+    return Math.round(val * 10_000_000);
+  }
+
+  // 2. Lakhs
+  const lakhMatch = clean.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:lakhs?|lacs?|lac|l)\b/i);
+  if (lakhMatch) {
+    const val = parseFloat(lakhMatch[1]!);
+    if (isNaN(val) || val <= 0) return null;
+    return Math.round(val * 100_000);
+  }
+
+  // 3. Thousands / k
+  const kMatch = clean.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:thousands?|k)\b/i);
+  if (kMatch) {
+    const val = parseFloat(kMatch[1]!);
+    if (isNaN(val) || val <= 0) return null;
+    return Math.round(val * 1_000);
+  }
+
+  // 4. Standard digits with optional commas
+  const digitsOnly = clean.replace(/,/g, '').trim();
+  if (/^[0-9]+(?:\.[0-9]+)?$/.test(digitsOnly)) {
+    const val = parseFloat(digitsOnly);
+    if (isNaN(val) || val <= 0) return null;
+    return Math.round(val);
+  }
+
+  return null;
+}

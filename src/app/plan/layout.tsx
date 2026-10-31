@@ -1,5 +1,12 @@
 import * as React from 'react';
+import type { Metadata } from 'next';
 import { AppNav } from '@/components/layout/nav';
+
+export const metadata: Metadata = {
+  title: 'Plan Workspace Overview | Utsav Planner',
+  description:
+    'Summary dashboard for your celebration blueprint with budget health, upcoming milestones, and AI creative themes.',
+};
 
 export default function PlanLayout({ children }: { children: React.ReactNode }) {
   return (

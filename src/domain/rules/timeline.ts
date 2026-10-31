@@ -8,6 +8,7 @@ export interface MilestoneItem {
   detail: string;
   date: string; // YYYY-MM-DD
   daysBeforeEvent: number; // positive = days before, negative = days after
+  standardOffsetDays: number; // original lead time from locale pack
   critical: boolean;
   verifyNote?: string;
   phase: 'before' | 'after';
@@ -51,17 +52,42 @@ export function computeTimeline(
   const finalMilestones: MilestoneItem[] = [];
 
   if (!isCompressed) {
-    // Standard Mode: date = eventDate - offset
+    // Standard Mode:
+    // Any pre-event milestone whose computed date is before today gets date = today and catchUp = true
+    let previousDate = today;
+
     for (const m of preEvent) {
-      const scheduledDate = addDays(profile.eventDate, -m.offset);
-      const isPast = isDateBefore(scheduledDate, today);
+      const standardDate = addDays(profile.eventDate, -m.offset);
+      const isPast = isDateBefore(standardDate, today);
+
+      let computedDate = isPast ? today : standardDate;
+
+      // Invariant: Never earlier than today
+      if (isDateBefore(computedDate, today)) {
+        computedDate = today;
+      }
+
+      // Invariant: Non-decreasing monotonic sequence
+      if (isDateBefore(computedDate, previousDate)) {
+        computedDate = previousDate;
+      }
+
+      // Invariant: Pre-event dates must never equal or exceed eventDate
+      const dayBeforeEvent = addDays(profile.eventDate, -1);
+      if (isDateAfter(computedDate, dayBeforeEvent) && isDateBefore(today, profile.eventDate)) {
+        computedDate = dayBeforeEvent;
+      }
+
+      previousDate = computedDate;
+      const actualDaysBefore = daysBetween(computedDate, profile.eventDate);
 
       finalMilestones.push({
         id: m.id,
         title: m.title,
         detail: m.detail,
-        date: scheduledDate,
-        daysBeforeEvent: m.offset,
+        date: computedDate,
+        daysBeforeEvent: actualDaysBefore,
+        standardOffsetDays: m.offset,
         critical: m.critical,
         verifyNote: m.verifyNote,
         phase: 'before',
@@ -115,6 +141,7 @@ export function computeTimeline(
         detail: m.detail,
         date: computedDate,
         daysBeforeEvent: actualDaysBefore,
+        standardOffsetDays: m.offset,
         critical: m.critical,
         verifyNote: m.verifyNote,
         phase: 'before',
@@ -132,6 +159,7 @@ export function computeTimeline(
       detail: m.detail,
       date: scheduledDate,
       daysBeforeEvent: m.offset,
+      standardOffsetDays: m.offset,
       critical: m.critical,
       verifyNote: m.verifyNote,
       phase: 'after',
@@ -139,20 +167,25 @@ export function computeTimeline(
     });
   }
 
-  // Sort overall milestones by date ascending, pre-event before post-event
-  finalMilestones.sort((a, b) => {
-    if (a.date !== b.date) {
-      return a.date.localeCompare(b.date);
+  // Sort overall milestones: date ascending, pre-event before post-event, original stable order preserved
+  const indexed = finalMilestones.map((item, index) => ({ item, index }));
+  indexed.sort((a, b) => {
+    if (a.item.date !== b.item.date) {
+      return a.item.date.localeCompare(b.item.date);
     }
-    // Stable order preservation
-    return b.daysBeforeEvent - a.daysBeforeEvent;
+    if (a.item.phase !== b.item.phase) {
+      return a.item.phase === 'before' ? -1 : 1;
+    }
+    return a.index - b.index;
   });
+
+  const sortedMilestones = indexed.map((x) => x.item);
 
   return {
     mode,
     daysToEvent,
     minLeadDays,
-    milestones: finalMilestones,
+    milestones: sortedMilestones,
     criticalVendorsUnavailableNotice: isCompressed,
   };
 }

@@ -1,6 +1,12 @@
 {
   "name": "utsav-planner",
   "version": "0.1.0",
+  "description": "GenAI-assisted cultural celebration and event planner for India. Instant deterministic budget allocations, timelines, vendor directories, and LLM-assisted ideas.",
+  "license": "MIT",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +20,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:prod": "playwright test tests/e2e/smoke.spec.ts",
+    "smoke:api": "tsx scripts/smoke-api.ts",
+    "probe:llm": "NODE_OPTIONS='--conditions react-server' tsx scripts/probe-llm.ts",
+    "eval": "NODE_OPTIONS='--conditions react-server' tsx evals/runner.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "@radix-ui/react-checkbox": "^1.1.4",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
@@ -28,33 +39,41 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
     "next": "^15.2.0",
+    "openai": "^7.45.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.0.2",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/eslintrc": "^3.3.7",
     "@eslint/js": "^10.0.1",
+    "@next/bundle-analyzer": "^16.4.3",
     "@playwright/test": "^1.50.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "3.2.7",
     "autoprefixer": "^10.4.20",
+    "depcheck": "^1.4.7",
     "eslint": "^9.21.0",
     "eslint-config-next": "^15.2.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "fast-check": "^4.10.2",
     "jsdom": "^26.0.0",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.23",
     "prettier": "^3.5.2",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.2",
     "vitest": "^3.0.7"
   }

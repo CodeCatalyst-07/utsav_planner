@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeChecklist, resolveMapsQuery } from '@/domain/rules/checklist';
 import { indiaLocalePack } from '@/domain/config/in';
-import { EventProfile } from '@/domain/schemas/profile';
+import { EventProfile, EventType } from '@/domain/schemas/profile';
 
 describe('Checklist Engine (src/domain/rules/checklist.ts)', () => {
   const TODAY = '2026-10-29';
@@ -58,20 +58,6 @@ describe('Checklist Engine (src/domain/rules/checklist.ts)', () => {
     expect(tentItem?.isConditional).toBe(true);
   });
 
-  it('triggers jain and vegan dietary catering checklist items', () => {
-    const dietaryProfile: EventProfile = {
-      ...baseWeddingProfile,
-      dietary: { veg: 200, nonVeg: 50, jain: 30, vegan: 20 },
-    };
-
-    const result = computeChecklist(dietaryProfile, indiaLocalePack, TODAY);
-    const jainItem = result.items.find((i) => i.id === 'jain_kitchen_setup');
-    const veganItem = result.items.find((i) => i.id === 'vegan_dairy_free');
-
-    expect(jainItem).toBeDefined();
-    expect(veganItem).toBeDefined();
-  });
-
   it('triggers multi_function_flow item when wedding functionsCount > 1', () => {
     const multiFunctionProfile: EventProfile = {
       ...baseWeddingProfile,
@@ -90,7 +76,7 @@ describe('Checklist Engine (src/domain/rules/checklist.ts)', () => {
       cityTier: 'tier2',
       cityName: 'Indore',
       guestCount: 40,
-      totalBudgetInr: 60_000,
+      totalBudgetInr: 100_000,
       budgetTier: 'mid',
       venueType: 'home',
       functionsCount: 1,
@@ -107,7 +93,6 @@ describe('Checklist Engine (src/domain/rules/checklist.ts)', () => {
   });
 
   it('clamps due dates that precede today to today', () => {
-    // Event in 10 days, but venue lead time is 330 days
     const urgentProfile: EventProfile = {
       ...baseWeddingProfile,
       eventDate: '2026-11-08',
@@ -135,5 +120,114 @@ describe('Checklist Engine (src/domain/rules/checklist.ts)', () => {
       'tier1'
     );
     expect(queryWithFallback).toBe('Wedding Caterers in TIER1');
+  });
+
+  describe('Jain item and Vegan note consistency across all event types with food vendors', () => {
+    const eventTypes: Array<{
+      type: EventType;
+      foodItemId: string;
+      totalBudget: number;
+      guests: number;
+      venue: EventProfile['venueType'];
+    }> = [
+      {
+        type: 'wedding',
+        foodItemId: 'caterer',
+        totalBudget: 4_000_000,
+        guests: 200,
+        venue: 'banquet',
+      },
+      {
+        type: 'birthday_kids',
+        foodItemId: 'caterer',
+        totalBudget: 100_000,
+        guests: 40,
+        venue: 'home',
+      },
+      {
+        type: 'birthday_adult',
+        foodItemId: 'caterer',
+        totalBudget: 150_000,
+        guests: 50,
+        venue: 'banquet',
+      },
+      {
+        type: 'community_festival',
+        foodItemId: 'prasad_vendor',
+        totalBudget: 400_000,
+        guests: 500,
+        venue: 'community_hall',
+      },
+    ];
+
+    for (const { type, foodItemId, totalBudget, guests, venue } of eventTypes) {
+      it(`adds Jain counter checklist item and vegan note to food vendor for ${type}`, () => {
+        const profile: EventProfile = {
+          eventType: type,
+          eventDate: '2027-10-29',
+          cityTier: 'tier1',
+          cityName: 'Pune',
+          guestCount: guests,
+          totalBudgetInr: totalBudget,
+          budgetTier: 'mid',
+          venueType: venue,
+          functionsCount: 1,
+          dietary: {
+            veg: guests - 30,
+            nonVeg: 0,
+            jain: 20,
+            vegan: 10,
+          },
+          toggles: { venueIncluded: false, includeAttireJewellery: true },
+          overrides: {},
+          notes: undefined,
+        };
+
+        const result = computeChecklist(profile, indiaLocalePack, TODAY);
+
+        // 1. Jain counter item added
+        const jainItem = result.items.find((i) => i.id === 'jain_kitchen_setup');
+        expect(jainItem).toBeDefined();
+        expect(jainItem?.isConditional).toBe(true);
+        expect(jainItem?.budgetCategory).toBe('catering');
+
+        // 2. Vegan note attached to food vendor item
+        const foodItem = result.items.find((i) => i.id === foodItemId);
+        expect(foodItem).toBeDefined();
+        expect(foodItem?.note).toBeDefined();
+        expect(foodItem?.note?.toLowerCase()).toContain('vegan');
+      });
+
+      it(`does not add Jain counter or vegan note when counts are 0 for ${type}`, () => {
+        const profile: EventProfile = {
+          eventType: type,
+          eventDate: '2027-10-29',
+          cityTier: 'tier1',
+          cityName: 'Pune',
+          guestCount: guests,
+          totalBudgetInr: totalBudget,
+          budgetTier: 'mid',
+          venueType: venue,
+          functionsCount: 1,
+          dietary: {
+            veg: guests,
+            nonVeg: 0,
+            jain: 0,
+            vegan: 0,
+          },
+          toggles: { venueIncluded: false, includeAttireJewellery: true },
+          overrides: {},
+          notes: undefined,
+        };
+
+        const result = computeChecklist(profile, indiaLocalePack, TODAY);
+        const jainItem = result.items.find((i) => i.id === 'jain_kitchen_setup');
+        expect(jainItem).toBeUndefined();
+
+        const foodItem = result.items.find((i) => i.id === foodItemId);
+        expect(foodItem).toBeDefined();
+        expect(foodItem?.note).toBeUndefined();
+      });
+    }
   });
 });

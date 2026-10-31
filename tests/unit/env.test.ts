@@ -13,6 +13,13 @@ describe('Server Environment Validation (src/server/env.ts)', () => {
     expect(emptyConfig.RATE_LIMIT_PER_MIN).toBe(10);
     expect(emptyConfig.JARVIS_BASE_URL).toBe('https://models.jarvislabs.net/v1');
     expect(emptyConfig.JARVIS_MODEL).toBe('gemma-4-31b-it');
+    expect(emptyConfig.JARVIS_JSON_MODE).toBe('prompt_only');
+    expect(emptyConfig.JARVIS_EXTRA_BODY_JSON).toEqual({});
+    expect(emptyConfig.LLM_TIMEOUT_MS).toBe(20000);
+    expect(emptyConfig.AI_CACHE_TTL_SECONDS).toBe(1800);
+    expect(emptyConfig.CRITIC_ENABLED).toBe(false);
+    expect(emptyConfig.GROUNDING_ENABLED).toBe(false);
+    expect(emptyConfig.ALLOW_PROVIDER_OVERRIDE).toBe(false);
     expect(emptyConfig.GEMINI_API_KEY).toBeUndefined();
     expect(emptyConfig.GEMINI_MODEL).toBeUndefined();
     expect(emptyConfig.JARVISLABS_API_KEY).toBeUndefined();
@@ -68,6 +75,32 @@ describe('Server Environment Validation (src/server/env.ts)', () => {
     ).toThrowError(/GOOGLE_PLACES_API_KEY/);
   });
 
+  it('fails validation when VENDOR_SOURCE=gemini is used (gemini removed from VENDOR_SOURCE enum)', () => {
+    expect(() =>
+      parseEnv({
+        VENDOR_SOURCE: 'gemini',
+      })
+    ).toThrowError(/VENDOR_SOURCE/);
+  });
+
+  it('parses valid JARVIS_EXTRA_BODY_JSON correctly', () => {
+    const config = parseEnv({
+      JARVIS_EXTRA_BODY_JSON: JSON.stringify({ enable_thinking: false, max_tokens: 1024 }),
+    });
+    expect(config.JARVIS_EXTRA_BODY_JSON).toEqual({
+      enable_thinking: false,
+      max_tokens: 1024,
+    });
+  });
+
+  it('fails validation on invalid JARVIS_EXTRA_BODY_JSON without leaking contents', () => {
+    expect(() =>
+      parseEnv({
+        JARVIS_EXTRA_BODY_JSON: 'not-valid-json',
+      })
+    ).toThrowError(/JARVIS_EXTRA_BODY_JSON/);
+  });
+
   it('passes validation when VENDOR_SOURCE=places and GOOGLE_PLACES_API_KEY is provided', () => {
     const config = parseEnv({
       VENDOR_SOURCE: 'places',
@@ -90,6 +123,70 @@ describe('Server Environment Validation (src/server/env.ts)', () => {
       expect(errorMsg).toContain('RATE_LIMIT_PER_MIN');
       expect(errorMsg).not.toContain(secretLeakingValue);
     }
+  });
+
+  it('treats empty and whitespace-only strings as unset for all optional variables', () => {
+    const configWithEmptyStrings = parseEnv({
+      JARVISLABS_API_KEY: '',
+      GEMINI_API_KEY: '',
+      GEMINI_MODEL: '',
+      GEMINI_THINKING_BUDGET: '',
+      GOOGLE_PLACES_API_KEY: '',
+      RATE_LIMIT_PER_MIN: '',
+      LLM_TIMEOUT_MS: '',
+      AI_TOTAL_DEADLINE_MS: '',
+      AI_CACHE_TTL_SECONDS: '',
+      JARVIS_EXTRA_BODY_JSON: '',
+    });
+
+    expect(configWithEmptyStrings.JARVISLABS_API_KEY).toBeUndefined();
+    expect(configWithEmptyStrings.GEMINI_API_KEY).toBeUndefined();
+    expect(configWithEmptyStrings.GEMINI_MODEL).toBeUndefined();
+    expect(configWithEmptyStrings.GEMINI_THINKING_BUDGET).toBeUndefined();
+    expect(configWithEmptyStrings.GOOGLE_PLACES_API_KEY).toBeUndefined();
+    expect(configWithEmptyStrings.RATE_LIMIT_PER_MIN).toBe(10);
+    expect(configWithEmptyStrings.LLM_TIMEOUT_MS).toBe(20000);
+    expect(configWithEmptyStrings.AI_TOTAL_DEADLINE_MS).toBe(15000);
+    expect(configWithEmptyStrings.AI_CACHE_TTL_SECONDS).toBe(1800);
+    expect(configWithEmptyStrings.JARVIS_EXTRA_BODY_JSON).toEqual({});
+
+    const providersEmpty = getConfiguredProviders(configWithEmptyStrings);
+    expect(providersEmpty).toEqual({
+      gemini: false,
+      jarvis: false,
+      googlePlaces: false,
+    });
+
+    const configWithSpaces = parseEnv({
+      JARVISLABS_API_KEY: '   ',
+      GEMINI_API_KEY: '   ',
+      GEMINI_MODEL: '   ',
+      GEMINI_THINKING_BUDGET: '   ',
+      GOOGLE_PLACES_API_KEY: '   ',
+      RATE_LIMIT_PER_MIN: '   ',
+      LLM_TIMEOUT_MS: '   ',
+      AI_TOTAL_DEADLINE_MS: '   ',
+      AI_CACHE_TTL_SECONDS: '   ',
+      JARVIS_EXTRA_BODY_JSON: '   ',
+    });
+
+    expect(configWithSpaces.JARVISLABS_API_KEY).toBeUndefined();
+    expect(configWithSpaces.GEMINI_API_KEY).toBeUndefined();
+    expect(configWithSpaces.GEMINI_MODEL).toBeUndefined();
+    expect(configWithSpaces.GEMINI_THINKING_BUDGET).toBeUndefined();
+    expect(configWithSpaces.GOOGLE_PLACES_API_KEY).toBeUndefined();
+    expect(configWithSpaces.RATE_LIMIT_PER_MIN).toBe(10);
+    expect(configWithSpaces.LLM_TIMEOUT_MS).toBe(20000);
+    expect(configWithSpaces.AI_TOTAL_DEADLINE_MS).toBe(15000);
+    expect(configWithSpaces.AI_CACHE_TTL_SECONDS).toBe(1800);
+    expect(configWithSpaces.JARVIS_EXTRA_BODY_JSON).toEqual({});
+
+    const providersSpaces = getConfiguredProviders(configWithSpaces);
+    expect(providersSpaces).toEqual({
+      gemini: false,
+      jarvis: false,
+      googlePlaces: false,
+    });
   });
 
   it('getEnv() memoizes result and allows app/health to work without keys', () => {

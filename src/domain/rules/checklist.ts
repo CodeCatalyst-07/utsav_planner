@@ -99,6 +99,11 @@ export function computeChecklist(
   const isMonsoon = pack.seasonRules.monsoonMonths.includes(eventMonth);
   const isOutdoor = pack.seasonRules.outdoorVenues.includes(profile.venueType);
 
+  const foodVendorItem = items.find(
+    (i) => i.id === 'caterer' || i.id === 'prasad_vendor' || i.budgetCategory === 'catering'
+  );
+  const hasFoodVendor = !!foodVendorItem;
+
   for (const rule of pack.conditionalRules) {
     let triggered = false;
 
@@ -110,10 +115,17 @@ export function computeChecklist(
         triggered = isMonsoon && isOutdoor;
         break;
       case 'jain_dietary':
-        triggered = profile.dietary.jain > 0;
+        triggered = profile.dietary.jain > 0 && hasFoodVendor;
         break;
       case 'vegan_dietary':
-        triggered = profile.dietary.vegan > 0;
+        if (profile.dietary.vegan > 0 && foodVendorItem) {
+          const noteText =
+            rule.note ?? 'Separate vegan dairy-free catering section and dessert labeling.';
+          foodVendorItem.note = foodVendorItem.note
+            ? `${foodVendorItem.note}; ${noteText}`
+            : noteText;
+        }
+        triggered = false; // Vegan requirement attached as note to food vendor item
         break;
       case 'multi_function_wedding':
         triggered = profile.eventType === 'wedding' && profile.functionsCount > 1;

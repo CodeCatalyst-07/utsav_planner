@@ -78,7 +78,12 @@ export function computeFlags(
         midEstimate: formatInr(cateringMid),
         deficit: formatInr(deficit),
       }),
-      params: { cateringAllocation, cateringMid, deficit },
+      params: {
+        allocation: cateringAllocation,
+        estimateMid: budget.estimates.catering.mid,
+        estimateHigh: budget.estimates.catering.high,
+        suggestions: budget.estimates.catering.suggestions,
+      },
     });
   } else if (budget.estimates.catering.status === 'tight') {
     // 5. Catering tight allocation (Warning)
@@ -91,9 +96,10 @@ export function computeFlags(
         budgetTier: profile.budgetTier,
       }),
       params: {
-        cateringAllocation,
-        cateringHigh: budget.estimates.catering.high,
-        budgetTier: profile.budgetTier,
+        allocation: cateringAllocation,
+        estimateMid: budget.estimates.catering.mid,
+        estimateHigh: budget.estimates.catering.high,
+        suggestions: budget.estimates.catering.suggestions,
       },
     });
   }
@@ -136,7 +142,7 @@ export function computeFlags(
     });
   }
 
-  // 8. Dietary requirements info
+  // 8. Special dietary requirements info
   if (profile.dietary.jain > 0 || profile.dietary.vegan > 0) {
     const parts: string[] = [];
     if (profile.dietary.jain > 0) {
@@ -146,9 +152,9 @@ export function computeFlags(
       parts.push(`${profile.dietary.vegan} Vegan`);
     }
     flags.push({
-      code: 'dietary_mismatch',
+      code: 'special_diet_counters',
       severity: 'info',
-      message: flagMessages.dietary_mismatch({ detail: parts.join(', ') }),
+      message: flagMessages.special_diet_counters({ detail: parts.join(', ') }),
       params: { jain: profile.dietary.jain, vegan: profile.dietary.vegan },
     });
   }
@@ -168,6 +174,26 @@ export function computeFlags(
       code: 'community_permissions_verify',
       severity: 'info',
       message: flagMessages.community_permissions_verify(),
+    });
+  }
+
+  // 11. Catch-up required flag
+  const caughtUpMilestones = timeline.milestones.filter((m) => m.catchUp);
+  if (caughtUpMilestones.length > 0) {
+    const criticalCount = caughtUpMilestones.filter((m) => m.critical).length;
+    // Warning only if a caught-up critical milestone was >= 45 days past its standard date
+    const hasSeverelyOverdueCritical = caughtUpMilestones.some(
+      (m) => m.critical && m.standardOffsetDays - timeline.daysToEvent >= 45
+    );
+    const severity: 'warning' | 'info' = hasSeverelyOverdueCritical ? 'warning' : 'info';
+    flags.push({
+      code: 'catch_up_needed',
+      severity,
+      message: flagMessages.catch_up_needed({
+        count: caughtUpMilestones.length,
+        criticalCount,
+      }),
+      params: { count: caughtUpMilestones.length, criticalCount },
     });
   }
 

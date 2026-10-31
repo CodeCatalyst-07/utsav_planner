@@ -33,36 +33,23 @@ test.describe('Accessibility & Core Shell Smoke Tests', () => {
     expect(scanResults.violations).toEqual([]);
   });
 
-  test('/plan?sample=1 displays Phase 2 empty state with clear action and passes axe', async ({
+  test('/plan displays designed empty state with clear call to action and passes axe', async ({
     page,
   }) => {
-    await page.goto('/plan?sample=1');
+    // Clear storage to ensure clean empty state
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+
+    await page.goto('/plan');
 
     // Exactly one h1
     const h1Elements = page.locator('h1');
     await expect(h1Elements).toHaveCount(1);
-    await expect(h1Elements).toContainText('Sample Celebration Plan');
+    await expect(h1Elements).toContainText('Celebration Workspace');
 
-    // No dead buttons: has real link with clear call-to-action
-    const ctaButton = page.locator('a:has-text("Configure New Event")');
-    await expect(ctaButton).toBeVisible();
-
-    // Axe core accessibility verification
-    const scanResults = await new AxeBuilder({ page }).analyze();
-    expect(scanResults.violations).toEqual([]);
-  });
-
-  test('/plan workspace loads route-based nav links and passes axe', async ({ page }) => {
-    await page.goto('/plan');
-
-    // One h1
-    const h1Elements = page.locator('h1');
-    await expect(h1Elements).toHaveCount(1);
-    await expect(h1Elements).toContainText('Celebration Plan Overview');
-
-    // Route-based nav link has aria-current="page" and is visible
-    const activeNavLink = page.locator('nav a[aria-current="page"]:visible').first();
-    await expect(activeNavLink).toBeVisible();
+    // Actions exist
+    await expect(page.locator('a:has-text("Start Planning")')).toBeVisible();
+    await expect(page.locator('button:has-text("Try a sample plan")')).toBeVisible();
 
     // Axe core accessibility verification
     const scanResults = await new AxeBuilder({ page }).analyze();

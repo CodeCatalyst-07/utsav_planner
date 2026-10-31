@@ -1,0 +1,11 @@
+[allowlist]
+description = "Allowlist test dummy values and test files"
+paths = [
+  '''tests/unit/.*''',
+  '''tests/mocks/.*''',
+]
+regexes = [
+  '''secret-jarvis-key-67890''',
+  '''test-api-key''',
+  '''your_key_here''',
+]

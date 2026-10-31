@@ -45,8 +45,14 @@ jobs:
       - name: TypeScript Typecheck
         run: pnpm typecheck
 
-      - name: Vitest Unit Tests
-        run: pnpm test
+      - name: Vitest Unit & Coverage Tests
+        run: pnpm test:coverage
+
+      - name: LLM Deterministic Evals
+        run: pnpm eval
+
+      - name: Production Dependency Security Audit
+        run: pnpm audit --prod --audit-level=high || true
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium

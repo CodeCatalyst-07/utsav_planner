@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { isDateAfter, isValidDateString } from '../dates';
 
+// Disable JIT function compilation in Zod to guarantee zero CSP eval violations in strict environments
+z.config({ jitless: true });
+
 export const EventTypeEnum = z.enum([
   'wedding',
   'birthday_kids',
@@ -49,6 +52,52 @@ export const DietarySchema = z.object({
 });
 export type Dietary = z.infer<typeof DietarySchema>;
 
+/**
+ * Proportionally scales down dietary requirements if their sum exceeds the target guest count.
+ * Uses the largest remainder (Hamilton) method to guarantee integer results that strictly
+ * sum to <= targetGuestCount.
+ */
+export function scaleDietary(dietary: Dietary, targetGuestCount: number): Dietary {
+  const sum =
+    (dietary.veg || 0) + (dietary.nonVeg || 0) + (dietary.jain || 0) + (dietary.vegan || 0);
+  if (sum <= targetGuestCount) {
+    return dietary;
+  }
+  if (targetGuestCount <= 0) {
+    return { veg: 0, nonVeg: 0, jain: 0, vegan: 0 };
+  }
+  const ratio = targetGuestCount / sum;
+  const nonVeg = Math.floor((dietary.nonVeg || 0) * ratio);
+  const jain = Math.floor((dietary.jain || 0) * ratio);
+  const vegan = Math.floor((dietary.vegan || 0) * ratio);
+  const veg = Math.floor((dietary.veg || 0) * ratio);
+
+  const currentSum = veg + nonVeg + jain + vegan;
+  const remainder = targetGuestCount - currentSum;
+
+  const fractions = [
+    { key: 'veg', frac: (dietary.veg || 0) * ratio - veg },
+    { key: 'nonVeg', frac: (dietary.nonVeg || 0) * ratio - nonVeg },
+    { key: 'jain', frac: (dietary.jain || 0) * ratio - jain },
+    { key: 'vegan', frac: (dietary.vegan || 0) * ratio - vegan },
+  ].sort((a, b) => b.frac - a.frac);
+
+  const res: Dietary = { veg, nonVeg, jain, vegan };
+  for (let i = 0; i < remainder; i++) {
+    const item = fractions[i];
+    if (item) {
+      const k = item.key as keyof Dietary;
+      res[k] = (res[k] || 0) + 1;
+    }
+  }
+
+  const total = res.veg + res.nonVeg + res.jain + res.vegan;
+  if (total > targetGuestCount) {
+    res.veg = Math.max(0, res.veg - (total - targetGuestCount));
+  }
+  return res;
+}
+
 export const TogglesSchema = z.object({
   venueIncluded: z.boolean().default(false),
   includeAttireJewellery: z.boolean().default(true),
@@ -67,7 +116,7 @@ export function sanitizeNotes(notes?: string | null): string | undefined {
   return sanitized.slice(0, 500);
 }
 
-const BaseProfileSchema = z.object({
+export const BaseProfileSchema = z.object({
   eventType: EventTypeEnum,
   eventDate: z.string().refine(isValidDateString, {
     message: 'Event date must be a valid date in YYYY-MM-DD format',
@@ -80,12 +129,12 @@ const BaseProfileSchema = z.object({
     .max(60, 'City name cannot exceed 60 characters')
     .optional(),
   guestCount: z
-    .number({ required_error: 'Guest count is required' })
+    .number()
     .int('Guest count must be an integer')
     .min(1, 'Guest count must be at least 1')
     .max(5000, 'Guest count cannot exceed 5,000'),
   totalBudgetInr: z
-    .number({ required_error: 'Total budget is required' })
+    .number()
     .int('Budget must be an integer in rupees')
     .min(10_000, 'Total budget must be at least ₹10,000')
     .max(500_000_000, 'Total budget cannot exceed ₹50,00,00,000'),
@@ -196,3 +245,5 @@ export function validateProfile(input: unknown, today: string): ValidationResult
  */
 export const ProfilePatchSchema = BaseProfileSchema.partial();
 export type ProfilePatch = z.infer<typeof ProfilePatchSchema>;
+export const eventProfileSchema = BaseProfileSchema;
+export const EventProfileSchema = BaseProfileSchema;

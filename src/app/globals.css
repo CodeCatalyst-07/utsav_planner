@@ -13,6 +13,21 @@
     --surface-border: #eadccb;
     --danger: #b42318;
     --warning: #b54708;
+
+    /* 12-category budget tonal ramp (maroon -> rose -> sand -> teal) */
+    --cat-venue: #7a1f3d;
+    --cat-catering: #98284c;
+    --cat-decor: #b5385d;
+    --cat-photo_video: #c95275;
+    --cat-attire_jewellery: #d9748f;
+    --cat-entertainment: #b8744d;
+    --cat-stationery_gifts: #9e6b48;
+    --cat-rituals_misc: #7d7554;
+    --cat-cake_gifts: #49887b;
+    --cat-permissions_security: #2b8277;
+    --cat-cleanup_logistics: #17786f;
+    --cat-contingency: #0f766e;
+    --cat-unallocated: #5c6470;
   }
 
   /* Global HTML and Body defaults */

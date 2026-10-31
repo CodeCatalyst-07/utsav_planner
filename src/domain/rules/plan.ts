@@ -20,6 +20,8 @@ export interface BasePlan {
   assumptions: AssumptionItem[];
 }
 
+export type EventPlan = BasePlan;
+
 /**
  * Builds a complete celebration plan from a validated EventProfile.
  * Pure and deterministic.
