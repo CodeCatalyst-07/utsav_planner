@@ -79,7 +79,7 @@ Click **Deploy**. Vercel will run `pnpm build` (which includes full static gener
 
 ## Verifying a Deployed Production URL
 
-Once deployed, verify your live URL (e.g. `https://utsav-planner.vercel.app`):
+Once deployed, verify your live URL (e.g. `https://utsavplanner-xi.vercel.app/`):
 
 ### 1. API Smoke Test (Zero Secrets Exposed)
 

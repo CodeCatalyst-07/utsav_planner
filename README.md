@@ -8,13 +8,13 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-black.svg)](https://nextjs.org)
 
-**Live Demo URL**: [https://utsav-planner.vercel.app](https://utsav-planner.vercel.app) _(Deploy your own in 2 minutes via [docs/deployment.md](docs/deployment.md))_
+**Live Demo URL**: [https://utsavplanner-xi.vercel.app/](https://utsavplanner-xi.vercel.app/) _(Deploy your own in 2 minutes via [docs/deployment.md](docs/deployment.md))_
 
 ---
 
 ## 1. 90-Second Judge Walkthrough
 
-1. **Launch**: Open [Live Demo](https://utsav-planner.vercel.app) and click **"Pune Maharashtrian Wedding"** to instantly load a realistic 200-guest, ₹25 Lakh cultural celebration plan.
+1. **Launch**: Open [Live Demo](https://utsavplanner-xi.vercel.app/) and click **"Pune Maharashtrian Wedding"** to instantly load a realistic 200-guest, ₹25 Lakh cultural celebration plan.
 2. **Deterministic Workspace**: Observe the **Plan Home** overview. The financial allocation, milestone countdown, and regional checklist are generated in 0 milliseconds with pure client-side math.
 3. **What-If Sandbox (Zero Network Calls)**: Navigate to **Budget & What-If** (`/plan/budget`). Adjust the guest count stepper or input from 200 to 150. Notice how the budget reallocates live with zero network latency, mathematical precision, and instant audio-accessible screen reader announcements.
 4. **AI Reliability & Failover**: On **Plan Home**, click **"Generate Creative Themes"**. The multi-provider failover chain tries JarvisLabs Gemma-4-31B -> Google Gemini -> Deterministic Template Fallback. The numeric guard guarantees the AI never invents fake prices or invalid dates.
