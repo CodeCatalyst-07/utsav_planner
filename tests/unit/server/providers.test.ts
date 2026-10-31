@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { JarvisLLMProvider } from '@/server/ai/jarvis';
+import { JarvisLLMProvider, buildJarvisRequestBody } from '@/server/ai/jarvis';
 import { GeminiLLMProvider } from '@/server/ai/gemini';
 import { ProviderError } from '@/server/ai/provider';
+import { SECTION_REASONING_POLICY } from '@/server/ai/sections';
 
 describe('LLM Providers Unit Tests (src/server/ai/jarvis.ts & gemini.ts)', () => {
   describe('JarvisLLMProvider', () => {
@@ -192,6 +193,82 @@ describe('LLM Providers Unit Tests (src/server/ai/jarvis.ts & gemini.ts)', () =>
         maxTokens: 500,
       });
       expect(res.text).toBe('{"status":"ok"}');
+    });
+
+    describe('buildJarvisRequestBody (Per-Section Reasoning Construction)', () => {
+      it('adds enable_thinking: false when reasoning mode is off', () => {
+        const payload = buildJarvisRequestBody('gemma-4-31b-it', {
+          schemaName: 'ideas',
+          system: 'sys',
+          user: 'usr',
+          maxTokens: 2500,
+          reasoning: 'off',
+        });
+
+        expect((payload as any).chat_template_kwargs).toEqual({ enable_thinking: false });
+      });
+
+      it('does not add enable_thinking when reasoning mode is default', () => {
+        const payload = buildJarvisRequestBody('gemma-4-31b-it', {
+          schemaName: 'menu',
+          system: 'sys',
+          user: 'usr',
+          maxTokens: 2500,
+          reasoning: 'default',
+        });
+
+        expect((payload as any).chat_template_kwargs).toBeUndefined();
+      });
+
+      it('correctly maps each section according to SECTION_REASONING_POLICY', () => {
+        expect(SECTION_REASONING_POLICY.ideas).toBe('off');
+        expect(SECTION_REASONING_POLICY.category_tips).toBe('off');
+        expect(SECTION_REASONING_POLICY.narrate_diff).toBe('off');
+        expect(SECTION_REASONING_POLICY.chat_intent).toBe('off');
+        expect(SECTION_REASONING_POLICY.menu).toBe('default');
+
+        // Ideas payload has thinking disabled
+        const ideasPayload = buildJarvisRequestBody('gemma-4-31b-it', {
+          schemaName: 'ideas',
+          system: 'sys',
+          user: 'usr',
+          maxTokens: 2500,
+          reasoning: SECTION_REASONING_POLICY.ideas,
+        });
+        expect((ideasPayload as any).chat_template_kwargs).toEqual({ enable_thinking: false });
+
+        // Menu payload preserves default thinking
+        const menuPayload = buildJarvisRequestBody('gemma-4-31b-it', {
+          schemaName: 'menu',
+          system: 'sys',
+          user: 'usr',
+          maxTokens: 2500,
+          reasoning: SECTION_REASONING_POLICY.menu,
+        });
+        expect((menuPayload as any).chat_template_kwargs).toBeUndefined();
+      });
+
+      it('allows global extraBody override to supersede per-section reasoning defaults', () => {
+        const payload = buildJarvisRequestBody(
+          'gemma-4-31b-it',
+          {
+            schemaName: 'ideas',
+            system: 'sys',
+            user: 'usr',
+            maxTokens: 2500,
+            reasoning: 'off',
+          },
+          {
+            extraBody: { chat_template_kwargs: { enable_thinking: true, custom_param: 123 } },
+          }
+        );
+
+        // Global override wins
+        expect((payload as any).chat_template_kwargs).toEqual({
+          enable_thinking: true,
+          custom_param: 123,
+        });
+      });
     });
   });
 

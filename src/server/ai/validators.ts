@@ -186,14 +186,20 @@ export function validateOutput<T>(
   }
 
   // 4. Semantic Category Check (for category_tips)
-  if (data && typeof data === 'object' && 'tips' in data && Array.isArray((data as any).tips)) {
+  const tipContainer = data as { tips?: Array<{ categoryId?: string }> } | null;
+  if (
+    tipContainer &&
+    typeof tipContainer === 'object' &&
+    'tips' in tipContainer &&
+    Array.isArray(tipContainer.tips)
+  ) {
     const allowed = context.allowedCategoryIds ? new Set(context.allowedCategoryIds) : null;
     if (allowed) {
-      for (const tipItem of (data as any).tips) {
-        if (!allowed.has(tipItem.categoryId)) {
+      for (const tipItem of tipContainer.tips) {
+        if (!tipItem.categoryId || !allowed.has(tipItem.categoryId)) {
           return {
             valid: false,
-            error: `Invalid categoryId "${tipItem.categoryId}". Must be one of: ${Array.from(allowed).join(', ')}`,
+            error: `Invalid categoryId "${tipItem.categoryId || 'unknown'}". Must be one of: ${Array.from(allowed).join(', ')}`,
           };
         }
       }
@@ -218,13 +224,16 @@ export function validateOutput<T>(
   }
 
   // 6. Semantic Dietary Validation (for menu suggestions)
+  const menuContainer = data as {
+    suggestions?: Array<{ course: string; items: string[] }>;
+  } | null;
   if (
-    data &&
-    typeof data === 'object' &&
-    'suggestions' in data &&
-    Array.isArray((data as any).suggestions)
+    menuContainer &&
+    typeof menuContainer === 'object' &&
+    'suggestions' in menuContainer &&
+    Array.isArray(menuContainer.suggestions)
   ) {
-    const suggestions = (data as any).suggestions as Array<{ course: string; items: string[] }>;
+    const suggestions = menuContainer.suggestions;
     const profile = context.profile;
 
     if (profile) {

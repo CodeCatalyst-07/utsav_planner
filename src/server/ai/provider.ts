@@ -41,6 +41,8 @@ export interface GenerateJsonRequest {
   temperature?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
+  reasoning?: 'off' | 'default';
+  extraBody?: Record<string, unknown>;
 }
 
 export interface GenerateJsonResponse {

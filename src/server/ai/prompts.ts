@@ -1,20 +1,22 @@
 import 'server-only';
 import { EventProfile } from '@/domain/schemas/profile';
 import { PlanDiff } from '@/domain/rules/replan';
+import { redactPii } from '@/lib/pii';
 
 export const PROMPT_VERSION = 'v1.0.0';
 
 /**
- * Sanitizes untrusted user notes by stripping delimiter look-alikes.
+ * Sanitizes untrusted user notes by stripping delimiter look-alikes and redacting PII (phone, email).
  * Invariant: Never place user notes in the system prompt.
  */
 export function sanitizeUserNotes(notes?: string): string {
   if (!notes) return '';
-  return notes
+  const cleaned = notes
     .replace(/<\/?user_notes>/gi, '')
     .replace(/```/g, "'''")
     .trim()
     .slice(0, 1000);
+  return redactPii(cleaned);
 }
 
 /**

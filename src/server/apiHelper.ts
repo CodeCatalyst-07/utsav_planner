@@ -6,12 +6,28 @@ import { getOrCreateRequestId } from './security/requestId';
 import { createErrorResponse } from './security/logger';
 import { getEnv } from './env';
 
+const envLlmDailyLimit = (() => {
+  try {
+    return getEnv().LLM_DAILY_LIMIT ?? 60;
+  } catch {
+    return 60;
+  }
+})();
+
+const envRateLimitPerMin = (() => {
+  try {
+    return getEnv().RATE_LIMIT_PER_MIN ?? 10;
+  } catch {
+    return 10;
+  }
+})();
+
 // In-memory rate limiters
-// LLM limiter initialized with RATE_LIMIT_PER_MIN
+// LLM limiter initialized with RATE_LIMIT_PER_MIN and LLM_DAILY_LIMIT (default: 60/client/day)
 export const llmRateLimiter = new TokenBucketRateLimiter({
-  limit: 10,
+  limit: envRateLimitPerMin,
   windowMs: 60_000,
-  dailyLimit: 150,
+  dailyLimit: envLlmDailyLimit,
 });
 
 // Non-LLM generous limiter (60/min)

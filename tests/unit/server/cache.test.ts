@@ -104,4 +104,26 @@ describe('AICache (src/server/ai/cache.ts)', () => {
     expect(cache.size()).toBe(0);
     expect(cache.get('k1')).toBeUndefined();
   });
+
+  it('strictly enforces the 200-entry LRU cap on default AICache instances', () => {
+    const cache = new AICache(); // defaults to maxSize: 200
+
+    // Insert 250 unique items
+    for (let i = 0; i < 250; i++) {
+      cache.set(`key-${i}`, { index: i });
+    }
+
+    // Size must never exceed 200
+    expect(cache.size()).toBe(200);
+
+    // Oldest 50 keys (0 to 49) must have been evicted
+    for (let i = 0; i < 50; i++) {
+      expect(cache.get(`key-${i}`)).toBeUndefined();
+    }
+
+    // Newest 200 keys (50 to 249) must remain cached
+    for (let i = 50; i < 250; i++) {
+      expect(cache.get(`key-${i}`)).toEqual({ index: i });
+    }
+  });
 });

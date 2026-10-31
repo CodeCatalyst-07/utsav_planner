@@ -69,6 +69,7 @@ const rawEnvSchema = z
     VENDOR_SOURCE: z.enum(['sample', 'places']).default('sample'),
     GOOGLE_PLACES_API_KEY: optionalString(),
     RATE_LIMIT_PER_MIN: optionalNumber(10),
+    LLM_DAILY_LIMIT: optionalNumber(60),
     LLM_TIMEOUT_MS: optionalNumber(20000),
     AI_TOTAL_DEADLINE_MS: optionalNumber(15000),
     AI_CACHE_TTL_SECONDS: optionalNumber(1800),

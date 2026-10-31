@@ -110,11 +110,23 @@ export class TokenBucketRateLimiter {
 
 /**
  * Extracts client identifier from request headers.
- * Uses first hop of X-Forwarded-For to prevent spoofing, or falls back to 'anonymous'.
+ * Resolves IP via x-vercel-forwarded-for first (Vercel edge proxy header),
+ * then first hop of x-forwarded-for to prevent spoofing, then x-real-ip,
+ * or falls back to 'anonymous'.
  */
 export function getClientIp(headers?: Headers): string {
   if (!headers) return 'anonymous';
 
+  // 1. Prefer x-vercel-forwarded-for (Vercel edge proxy header)
+  const vercelForwarded = headers.get('x-vercel-forwarded-for');
+  if (vercelForwarded) {
+    const firstHop = vercelForwarded.split(',')[0]?.trim();
+    if (firstHop && firstHop.length > 0) {
+      return firstHop.replace(/[^a-zA-Z0-9.:]/g, '').slice(0, 45);
+    }
+  }
+
+  // 2. First hop of x-forwarded-for
   const xff = headers.get('x-forwarded-for');
   if (xff) {
     const firstHop = xff.split(',')[0]?.trim();

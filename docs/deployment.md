@@ -46,6 +46,7 @@ In the Vercel Project Settings under **Environment Variables**, configure the pr
 | `VENDOR_SOURCE`           | String  | Optional | `sample`                           | Defaults to zero-cost fictional curated listings. Set to `places` when key is present.               |
 | `ALLOW_PROVIDER_OVERRIDE` | Boolean | Optional | `false`                            | Security guard: prevents external users from bypassing provider chain via headers.                   |
 | `RATE_LIMIT_PER_MIN`      | Number  | Optional | `10`                               | In-memory token bucket rate limit per client IP for AI routes.                                       |
+| `LLM_DAILY_LIMIT`         | Number  | Optional | `60`                               | Daily ceiling for LLM routes per client IP (resets daily).                                           |
 | `AI_TOTAL_DEADLINE_MS`    | Number  | Optional | `15000`                            | Hard 15-second end-to-end deadline before Vercel gateway timeout.                                    |
 
 ### 3. Deploy

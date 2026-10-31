@@ -17,6 +17,13 @@ export const CriticVerdictSchema = z.object({
 });
 export type CriticVerdict = z.infer<typeof CriticVerdictSchema>;
 
+export type CriticStatus = 'skipped' | 'ran' | 'failed';
+
+export interface CriticEvaluationResult {
+  status: CriticStatus;
+  verdict?: CriticVerdict;
+}
+
 export class GeminiCritic {
   private readonly gemini: GeminiProvider;
   private readonly enabled: boolean;
@@ -41,15 +48,15 @@ export class GeminiCritic {
 
   /**
    * Evaluates generated sections against profile constraints (dietary mix, budget tier, cultural fit).
-   * Invariant: Critic failure NEVER blocks response; errors gracefully return approved=true with no issues.
+   * Invariant: Critic failure NEVER blocks response; errors return status: 'failed' without throwing.
    */
   async evaluateSections(
     profile: EventProfile,
     sections: Record<string, unknown>,
     requestId: string = 'critic'
-  ): Promise<CriticVerdict> {
+  ): Promise<CriticEvaluationResult> {
     if (!this.isEnabled()) {
-      return { approved: true, issues: [] };
+      return { status: 'skipped' };
     }
 
     const systemPrompt = `You are the cultural and quality critic for Utsav Planner, an Indian celebration planning app.
@@ -95,16 +102,16 @@ ${JSON.stringify(sections, null, 2)}`;
       const verdict = CriticVerdictSchema.safeParse(parsed);
 
       if (verdict.success) {
-        return verdict.data;
+        return { status: 'ran', verdict: verdict.data };
       }
 
       logger.warn({
         requestId,
         route: 'critic',
         status: 'warn',
-        message: 'Critic output failed schema validation; defaulting to approved',
+        message: 'Critic output failed schema validation',
       });
-      return { approved: true, issues: [] };
+      return { status: 'failed' };
     } catch (err: unknown) {
       logger.warn({
         requestId,
@@ -112,7 +119,7 @@ ${JSON.stringify(sections, null, 2)}`;
         status: 'warn',
         message: `Critic evaluation failed: ${(err as Error).message}; proceeding without critic gating`,
       });
-      return { approved: true, issues: [] };
+      return { status: 'failed' };
     }
   }
 }

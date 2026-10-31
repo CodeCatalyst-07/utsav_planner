@@ -67,6 +67,7 @@
     "eslint-config-next": "^15.2.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "fast-check": "^4.10.2",
+    "jscpd": "^5.4.2",
     "jsdom": "^26.0.0",
     "postcss": "^8.5.23",
     "prettier": "^3.5.2",

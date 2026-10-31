@@ -45,6 +45,16 @@ export type ChatIntentSection = z.infer<typeof ChatIntentSectionSchema>;
 
 export type SectionType = 'ideas' | 'category_tips' | 'menu' | 'narrate_diff';
 
+export type ReasoningMode = 'off' | 'default';
+
+export const SECTION_REASONING_POLICY: Record<SectionType | 'chat_intent', ReasoningMode> = {
+  ideas: 'off',
+  category_tips: 'off',
+  narrate_diff: 'off',
+  chat_intent: 'off',
+  menu: 'default',
+};
+
 export const sectionSchemas = {
   ideas: IdeasSectionSchema,
   category_tips: CategoryTipsSectionSchema,

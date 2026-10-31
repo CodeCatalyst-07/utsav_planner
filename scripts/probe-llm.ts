@@ -9,7 +9,6 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { JarvisProvider } from '../src/server/ai/jarvis';
 import {
@@ -73,20 +72,14 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || localEnv.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || localEnv.GEMINI_MODEL || '';
 const GROUNDING_ENABLED = (process.env.GROUNDING_ENABLED || localEnv.GROUNDING_ENABLED) === 'true';
 
-const rawExtraBody = process.env.JARVIS_EXTRA_BODY_JSON || localEnv.JARVIS_EXTRA_BODY_JSON;
-let JARVIS_EXTRA_BODY: Record<string, unknown> = {};
-if (rawExtraBody) {
-  try {
-    JARVIS_EXTRA_BODY = typeof rawExtraBody === 'string' ? JSON.parse(rawExtraBody) : rawExtraBody;
-  } catch {
-    JARVIS_EXTRA_BODY = {};
-  }
-}
+const RUN_GEMINI_PROBE = process.argv.includes('--with-gemini');
 
-interface ProbeMetric {
+interface BenchmarkMetric {
   section: string;
+  config: string;
   totalRuns: number;
-  validCount: number;
+  firstAttemptValid: number;
+  totalValid: number;
   latencies: number[];
   finishReasons: Record<string, number>;
   repairs: number;
@@ -102,502 +95,183 @@ function computeStats(latencies: number[]) {
   return { avg, p50, max };
 }
 
-function formatRow(label: string, metric: ProbeMetric): string {
-  const { avg, p50, max } = computeStats(metric.latencies);
-  const validPct = Math.round((metric.validCount / Math.max(1, metric.totalRuns)) * 100);
-  const finishSummary =
-    Object.entries(metric.finishReasons)
-      .map(([k, v]) => `${k}:${v}`)
-      .join(',') || 'none';
-  return `| ${label.padEnd(28)} | ${(validPct + '%').padEnd(7)} | ${(avg + 'ms').padEnd(8)} | ${(p50 + 'ms').padEnd(8)} | ${(max + 'ms').padEnd(8)} | ${finishSummary.padEnd(16)} | ${String(metric.repairs).padEnd(7)} | ${String(metric.truncations).padEnd(11)} |`;
+function formatRow(m: BenchmarkMetric): string {
+  const { avg, p50, max } = computeStats(m.latencies);
+  const firstValidPct = `${Math.round((m.firstAttemptValid / m.totalRuns) * 100)}%`;
+  const finishSummary = Object.entries(m.finishReasons)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(' ');
+  return (
+    `| ${m.section.padEnd(28)} | ${m.config.padEnd(16)} | ${firstValidPct.padEnd(15)} | ` +
+    `${`${avg}ms`.padEnd(9)} | ${`${p50}ms`.padEnd(9)} | ${`${max}ms`.padEnd(9)} | ` +
+    `${String(m.repairs).padEnd(7)} | ${finishSummary.padEnd(12)} |`
+  );
 }
 
-async function main() {
-  console.log('================================================================');
-  console.log('   UTSAV PLANNER - LLM LIVE PROBE BENCHMARK SUITE (PHASE 2.4)');
-  console.log('================================================================');
+async function runSectionSuite(
+  provider: JarvisProvider,
+  configLabel: string,
+  label: string,
+  schema: unknown,
+  promptBuilder: () => { system: string; user: string },
+  validationContext: unknown,
+  runs: number
+): Promise<BenchmarkMetric> {
+  const metric: BenchmarkMetric = {
+    section: label,
+    config: configLabel,
+    totalRuns: runs,
+    firstAttemptValid: 0,
+    totalValid: 0,
+    latencies: [],
+    finishReasons: {},
+    repairs: 0,
+    truncations: 0,
+  };
 
-  if (!JARVIS_API_KEY && !GEMINI_API_KEY) {
-    console.log('not run: no keys');
-    console.log(
-      'Neither JARVISLABS_API_KEY nor GEMINI_API_KEY configured in environment or .env.local.'
-    );
-    process.exit(0);
+  for (let run = 1; run <= runs; run++) {
+    const t0 = Date.now();
+    const prompt = promptBuilder();
+    try {
+      const res = await provider.generateJson({
+        system: prompt.system,
+        user: prompt.user,
+        schemaName: 'probe_bench',
+        maxTokens: 2500,
+        temperature: 0.3,
+        timeoutMs: 25000,
+      });
+      const lat = Date.now() - t0;
+      metric.latencies.push(lat);
+
+      const finish = res.finishReason || 'stop';
+      metric.finishReasons[finish] = (metric.finishReasons[finish] || 0) + 1;
+      if (finish === 'length') {
+        metric.truncations++;
+        continue;
+      }
+
+      let parsed: unknown = null;
+      let parseErr: string | null = null;
+      try {
+        parsed = extractJsonObject(res.text);
+      } catch (e) {
+        parseErr = (e as Error).message;
+      }
+
+      if (parsed) {
+        const val = validateOutput(
+          parsed,
+          schema as import('zod').ZodTypeAny,
+          validationContext as import('../src/server/ai/validators').ValidationContext
+        );
+        if (val.valid) {
+          metric.firstAttemptValid++;
+          metric.totalValid++;
+          continue;
+        }
+        parseErr = val.error || 'validation error';
+      }
+
+      // First attempt failed -> trigger 1 repair attempt
+      metric.repairs++;
+      const repairPrompt = buildRepairPrompt(prompt.user, res.text, parseErr || 'invalid output');
+      const repairRes = await provider.generateJson({
+        system: prompt.system,
+        user: repairPrompt,
+        schemaName: 'probe_repair',
+        maxTokens: 2500,
+        temperature: 0.2,
+        timeoutMs: 20000,
+      });
+      const repairParsed = extractJsonObject(repairRes.text);
+      const repairVal = validateOutput(
+        repairParsed,
+        schema as import('zod').ZodTypeAny,
+        validationContext as import('../src/server/ai/validators').ValidationContext
+      );
+      if (repairVal.valid) {
+        metric.totalValid++;
+      }
+    } catch {
+      // provider error, timeout, etc.
+    }
   }
 
-  // --- 1. JARVIS PLAIN CHAT LATENCY & REASONING TOKENS ---
-  if (JARVIS_API_KEY) {
-    console.log('\n--- 1. JARVIS PLAIN CHAT LATENCY & REASONING TOKENS ---');
-    const client = new OpenAI({ apiKey: JARVIS_API_KEY, baseURL: JARVIS_BASE_URL });
-    const t0 = Date.now();
-    try {
-      const res = await client.chat.completions.create({
-        model: JARVIS_MODEL,
-        messages: [{ role: 'user', content: 'Reply in 5 words: What is Diwali?' }],
-        max_tokens: 1024,
-      });
-      const latency = Date.now() - t0;
-      const choice = res.choices[0];
-      const message = choice?.message as any;
-      const content = message?.content?.trim() || '';
-      const reasoningContent = message?.reasoning_content?.trim() || '';
-      const finishReason = choice?.finish_reason;
-      const usage = res.usage;
+  return metric;
+}
 
-      console.log(`Latency: ${latency}ms`);
-      console.log(`Finish Reason: ${finishReason}`);
-      console.log(
-        `Usage: prompt_tokens=${usage?.prompt_tokens}, completion_tokens=${usage?.completion_tokens}, total_tokens=${usage?.total_tokens}`
-      );
-      console.log(`Message Content: "${content.slice(0, 100)}"`);
-      console.log(
-        `Reasoning Content: ${reasoningContent ? `"${reasoningContent.slice(0, 100)}..." (${reasoningContent.length} chars)` : 'None (model did not emit separate reasoning_content)'}`
-      );
-    } catch (err) {
-      console.log(`Jarvis plain chat error: ${(err as Error).message}`);
-    }
+async function runChatSuite(
+  provider: JarvisProvider,
+  configLabel: string,
+  runsPerMessage: number
+): Promise<BenchmarkMetric> {
+  const chatMessages = [
+    // 5 patch-yielding messages
+    { label: 'Chat: Add 50k Catering', msg: 'Increase total catering budget by 50000' },
+    { label: 'Chat: Guests to 250', msg: 'Change guest count to 250' },
+    { label: 'Chat: Shift 1L Decor', msg: 'Shift 1 lakh from decor to photography' },
+    { label: 'Chat: Event Date', msg: 'Change event date to 2027-02-15' },
+    {
+      label: 'Chat: Dietary Split',
+      msg: 'Update vegetarian guests to 180 and non-vegetarian to 20',
+    },
+    // 5 advice / cultural questions
+    { label: 'Chat: Question Attire', msg: 'What should guests wear for an evening Sangeet?' },
+    {
+      label: 'Chat: Question Favors',
+      msg: 'What are traditional Maharashtrian wedding favors in Pune?',
+    },
+    {
+      label: 'Chat: Question Sweets',
+      msg: 'Which traditional sweets are customary for a Maharashtrian wedding?',
+    },
+    {
+      label: 'Chat: Question Shehnai',
+      msg: 'What acoustic setup is recommended for a live Shehnai performance?',
+    },
+    {
+      label: 'Chat: Question Mandap',
+      msg: 'Which flowers are traditionally auspicious for the wedding mandap?',
+    },
+  ];
 
-    // --- 2. JARVIS JSON: prompt_only VS response_format ---
-    console.log('\n--- 2. JARVIS JSON: prompt_only VS response_format (WHITESPACE TRAP) ---');
-    for (const mode of ['prompt_only', 'response_format'] as const) {
-      const tStart = Date.now();
-      try {
-        const body: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-          model: JARVIS_MODEL,
-          messages: [
-            {
-              role: 'system',
-              content:
-                mode === 'prompt_only'
-                  ? 'Output strictly a JSON object: {"festival": string, "month": string}. No other text.'
-                  : 'You are a helpful assistant.',
-            },
-            { role: 'user', content: 'Return Diwali festival information.' },
-          ],
-          max_tokens: 1024,
-          temperature: 0.2,
-          ...(mode === 'response_format' ? { response_format: { type: 'json_object' } } : {}),
-        };
-        const res = await client.chat.completions.create(body);
-        const lat = Date.now() - tStart;
-        const raw = res.choices[0]?.message?.content || '';
-        const finishReason = res.choices[0]?.finish_reason;
-        const isWhitespaceOnly = raw.trim().length === 0;
-        console.log(
-          `Mode: [${mode.padEnd(15)}] | Latency: ${lat}ms | Finish: ${finishReason} | Whitespace-only trap: ${isWhitespaceOnly ? 'YES (TRAP)' : 'NO (SAFE)'}`
-        );
-      } catch (err) {
-        console.log(`Mode: [${mode}] error: ${(err as Error).message}`);
-      }
-    }
+  const totalCalls = chatMessages.length * runsPerMessage;
+  const metric: BenchmarkMetric = {
+    section: `Chat Intent (${chatMessages.length} msgs x ${runsPerMessage})`,
+    config: configLabel,
+    totalRuns: totalCalls,
+    firstAttemptValid: 0,
+    totalValid: 0,
+    latencies: [],
+    finishReasons: {},
+    repairs: 0,
+    truncations: 0,
+  };
 
-    // --- 3. REASONING TOGGLE EXPERIMENTS (3 RUNS EACH) ---
-    console.log('\n--- 3. REASONING TOGGLE EXPERIMENTS (3 RUNS EACH) ---');
-    const toggleVariants = [
-      { name: 'none (default)', extra: {} },
-      {
-        name: 'enable_thinking: false',
-        extra: { chat_template_kwargs: { enable_thinking: false } },
-      },
-      { name: 'reasoning: effort=low', extra: { reasoning: { effort: 'low' } } },
-      { name: 'reasoning_effort: low', extra: { reasoning_effort: 'low' } },
-    ];
-
-    for (const variant of toggleVariants) {
-      console.log(`\nEvaluating variant: [${variant.name}]`);
-      const latencies: number[] = [];
-      const tokenCounts: number[] = [];
-      let rejected = false;
-
-      for (let run = 1; run <= 3; run++) {
-        const tStart = Date.now();
-        try {
-          const body: any = {
-            model: JARVIS_MODEL,
-            messages: [
-              {
-                role: 'user',
-                content: 'Suggest 2 wedding colors in JSON: {"colors": string[]}',
-              },
-            ],
-            max_tokens: 1024,
-            temperature: 0.2,
-            ...variant.extra,
-          };
-          const res = await client.chat.completions.create(body);
-          const lat = Date.now() - tStart;
-          latencies.push(lat);
-          const totalTokens = res.usage?.total_tokens ?? 0;
-          tokenCounts.push(totalTokens);
-          const choice = res.choices[0];
-          const hasReasoning = Boolean((choice?.message as any)?.reasoning_content);
-          console.log(
-            `  Run ${run}: Latency=${lat}ms | TotalTokens=${totalTokens} | HasReasoningField=${hasReasoning} | Finish=${choice?.finish_reason}`
-          );
-        } catch (err) {
-          rejected = true;
-          console.log(`  Run ${run} rejected: ${(err as Error).message}`);
-        }
-      }
-
-      if (!rejected && latencies.length > 0) {
-        const avgLat = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
-        const avgTok = Math.round(tokenCounts.reduce((a, b) => a + b, 0) / tokenCounts.length);
-        console.log(`  Summary [${variant.name}]: Avg Latency=${avgLat}ms, Avg Tokens=${avgTok}`);
-      }
-    }
-
-    // --- 4. RECONCILIATION: OLD CONFIGURATION VS NEW PIPELINE ---
-    console.log('\n================================================================');
-    console.log('--- 4A. OLD PROBE CONFIGURATION (max_tokens: 400, naive regex) ---');
-    console.log('================================================================');
-
-    const oldSamples = [
-      {
-        name: 'Ideas - Pune Wedding',
-        prompt: '3 wedding themes: JSON {"themes":[{"title":string,"description":string}]}',
-      },
-      {
-        name: 'Ideas - Kids Indore',
-        prompt: '3 kids party themes: JSON {"themes":[{"title":string,"description":string}]}',
-      },
-      {
-        name: 'Ideas - Community Mumbai',
-        prompt: '3 festival themes: JSON {"themes":[{"title":string,"description":string}]}',
-      },
-    ];
-
-    const oldResults: Record<string, ProbeMetric> = {};
-
-    for (const sample of oldSamples) {
-      const metric: ProbeMetric = {
-        section: sample.name,
-        totalRuns: 5,
-        validCount: 0,
-        latencies: [],
-        finishReasons: {},
-        repairs: 0,
-        truncations: 0,
-      };
-
-      for (let run = 1; run <= 5; run++) {
-        const tRun = Date.now();
-        try {
-          const res = await client.chat.completions.create({
-            model: JARVIS_MODEL,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a JSON assistant. Return ONLY valid JSON matching {"themes":[{"title":string,"description":string}]}.',
-              },
-              { role: 'user', content: sample.prompt },
-            ],
-            max_tokens: 400, // Old starved budget
-            temperature: 0.3,
-          });
-          const lat = Date.now() - tRun;
-          metric.latencies.push(lat);
-
-          const choice = res.choices[0];
-          const finish = choice?.finish_reason || 'unknown';
-          metric.finishReasons[finish] = (metric.finishReasons[finish] || 0) + 1;
-          if (finish === 'length') {
-            metric.truncations++;
-          }
-
-          const raw = choice?.message?.content || '';
-          // Old naive parser
-          const cleaned = raw.replace(/```(?:json)?|```/g, '').trim();
-          const parsed = JSON.parse(cleaned);
-          if (Array.isArray(parsed?.themes) && parsed.themes.length > 0) {
-            metric.validCount++;
-          }
-        } catch {
-          // parse error, truncation, or network failure
-        }
-      }
-      oldResults[sample.name] = metric;
-    }
-
-    console.log('\nOLD PROBE RESULTS TABLE:');
-    console.log(
-      '| Section                      | Valid % | Avg Lat  | P50 Lat  | Max Lat  | Finish Reasons   | Repairs | Truncations |'
-    );
-    console.log(
-      '|------------------------------|---------|----------|----------|----------|------------------|---------|-------------|'
-    );
-    for (const [name, m] of Object.entries(oldResults)) {
-      console.log(formatRow(name, m));
-    }
-
-    console.log('\n================================================================');
-    console.log('--- 4B-1. PREVIOUS PIPELINE BASELINE (Phase 2.4, Default Thinking) ---');
-    console.log('================================================================');
-    console.log(
-      '| Section                      | Valid % | Avg Lat  | P50 Lat  | Max Lat  | Finish Reasons   | Repairs | Truncations |'
-    );
-    console.log(
-      '|------------------------------|---------|----------|----------|----------|------------------|---------|-------------|'
-    );
-    console.log(
-      '| Ideas - Pune Wedding         | 100%    | 1850ms   | 1820ms   | 2100ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Ideas - Kids Indore          | 100%    | 1740ms   | 1700ms   | 1950ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Ideas - Community Mumbai     | 100%    | 1890ms   | 1860ms   | 2210ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Menu - Pune Wedding          | 100%    | 2100ms   | 2050ms   | 2400ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Category Tips - Pune Wedding | 100%    | 1920ms   | 1880ms   | 2250ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Narrate Diff                 | 100%    | 1650ms   | 1600ms   | 1900ms   | stop:5           | 0       | 0           |'
-    );
-    console.log(
-      '| Chat Intent (5 msgs)         | 80%     | 2420ms   | 1950ms   | 10120ms  | stop:5           | 1       | 0           |'
-    );
-
-    console.log('\n================================================================');
-    console.log(
-      `--- 4B-2. NEW PRODUCTION PIPELINE (Jarvis, extraBody: ${JSON.stringify(JARVIS_EXTRA_BODY)}) ---`
-    );
-    console.log('================================================================');
-
-    const jarvisProvider = new JarvisProvider({
-      apiKey: JARVIS_API_KEY,
-      baseURL: JARVIS_BASE_URL,
-      model: JARVIS_MODEL,
-      jsonMode: 'prompt_only',
-      extraBody: JARVIS_EXTRA_BODY,
-      defaultTimeoutMs: 25000,
-    });
-
-    const newResults: Record<string, ProbeMetric> = {};
-
-    async function runNewPipelineSection(
-      label: string,
-      schema: any,
-      promptBuilder: () => { system: string; user: string },
-      validationContext: any,
-      runs: number
-    ): Promise<ProbeMetric> {
-      const metric: ProbeMetric = {
-        section: label,
-        totalRuns: runs,
-        validCount: 0,
-        latencies: [],
-        finishReasons: {},
-        repairs: 0,
-        truncations: 0,
-      };
-
-      for (let run = 1; run <= runs; run++) {
-        const t0 = Date.now();
-        const prompt = promptBuilder();
-        try {
-          const res = await jarvisProvider.generateJson({
-            system: prompt.system,
-            user: prompt.user,
-            schemaName: 'probe_test',
-            maxTokens: 2500, // Production budget
-            temperature: 0.3,
-            timeoutMs: 20000,
-          });
-          const lat = Date.now() - t0;
-          metric.latencies.push(lat);
-
-          const finish = res.finishReason || 'stop';
-          metric.finishReasons[finish] = (metric.finishReasons[finish] || 0) + 1;
-          if (finish === 'length') {
-            metric.truncations++;
-            continue;
-          }
-
-          let parsed: any = null;
-          let parseErr: string | null = null;
-          try {
-            parsed = extractJsonObject(res.text);
-          } catch (e) {
-            parseErr = (e as Error).message;
-          }
-
-          if (parsed) {
-            const val = validateOutput(parsed, schema, validationContext);
-            if (val.valid) {
-              metric.validCount++;
-              continue;
-            }
-            parseErr = val.error || 'validation error';
-          }
-
-          // 1 repair attempt
-          metric.repairs++;
-          const repairPrompt = buildRepairPrompt(
-            prompt.user,
-            res.text,
-            parseErr || 'invalid output'
-          );
-          const repairRes = await jarvisProvider.generateJson({
-            system: prompt.system,
-            user: repairPrompt,
-            schemaName: 'probe_repair',
-            maxTokens: 2500,
-            temperature: 0.2,
-            timeoutMs: 15000,
-          });
-          const repairParsed = extractJsonObject(repairRes.text);
-          const repairVal = validateOutput(repairParsed, schema, validationContext);
-          if (repairVal.valid) {
-            metric.validCount++;
-          }
-        } catch {
-          // failure
-        }
-      }
-
-      return metric;
-    }
-
-    // 1. ideas x 5 for each of 3 profiles
-    console.log('Testing Section: ideas x 5 for each of 3 profiles ...');
-    newResults['Ideas - Pune Wedding'] = await runNewPipelineSection(
-      'Ideas - Pune Wedding',
-      IdeasSectionSchema,
-      () => buildIdeasPrompt(weddingPuneFixture),
-      { profile: weddingPuneFixture },
-      5
-    );
-
-    newResults['Ideas - Kids Indore'] = await runNewPipelineSection(
-      'Ideas - Kids Indore',
-      IdeasSectionSchema,
-      () => buildIdeasPrompt(birthdayKidsIndoreFixture),
-      { profile: birthdayKidsIndoreFixture },
-      5
-    );
-
-    newResults['Ideas - Community Mumbai'] = await runNewPipelineSection(
-      'Ideas - Community Mumbai',
-      IdeasSectionSchema,
-      () => buildIdeasPrompt(communityGaneshMumbaiFixture),
-      { profile: communityGaneshMumbaiFixture },
-      5
-    );
-
-    // 2. menu x 5
-    console.log('Testing Section: menu x 5 ...');
-    newResults['Menu - Pune Wedding'] = await runNewPipelineSection(
-      'Menu - Pune Wedding',
-      MenuSectionSchema,
-      () => buildMenuPrompt(weddingPuneFixture),
-      { profile: weddingPuneFixture },
-      5
-    );
-
-    // 3. category_tips x 5
-    console.log('Testing Section: category_tips x 5 ...');
-    const allowedCats = ['venue', 'catering', 'decor', 'photo_video'];
-    newResults['Category Tips - Pune Wedding'] = await runNewPipelineSection(
-      'Category Tips - Pune Wedding',
-      CategoryTipsSectionSchema,
-      () => buildCategoryTipsPrompt(weddingPuneFixture, allowedCats),
-      { profile: weddingPuneFixture, allowedCategoryIds: allowedCats },
-      5
-    );
-
-    // 4. narrate_diff x 5
-    console.log('Testing Section: narrate_diff x 5 ...');
-    const diffFixture: PlanDiff = {
-      budgetLines: [],
-      cateringEstimateDelta: 0,
-      summaryFacts: [
-        'Total budget updated to ₹45,00,000 (+₹5,00,000)',
-        'Guest count adjusted from 200 to 250 (+50)',
-      ],
-      totalDelta: 500000,
-      flagsAdded: [],
-      flagsRemoved: [],
-      milestonesShifted: [],
-      checklistAdded: [],
-      checklistRemoved: [],
-    };
-    newResults['Narrate Diff'] = await runNewPipelineSection(
-      'Narrate Diff',
-      NarrateDiffSectionSchema,
-      () => buildNarrateDiffPrompt(diffFixture),
-      { profile: weddingPuneFixture, diff: diffFixture },
-      5
-    );
-
-    // 5. chat_intent x 10 different messages (5 patches, 5 questions)
-    console.log('Testing Section: chat_intent x 10 messages (5 patches, 5 questions) ...');
-    const chatMessages = [
-      // 5 patch-yielding messages
-      { label: 'Chat: Add 50k Catering', msg: 'Increase total catering budget by 50000' },
-      { label: 'Chat: Guests to 250', msg: 'Change guest count to 250' },
-      { label: 'Chat: Shift 1L Decor', msg: 'Shift 1 lakh from decor to photography' },
-      { label: 'Chat: Event Date', msg: 'Change event date to 2027-02-15' },
-      {
-        label: 'Chat: Dietary Split',
-        msg: 'Update vegetarian guests to 180 and non-vegetarian to 20',
-      },
-      // 5 advice / cultural questions
-      { label: 'Chat: Question Attire', msg: 'What should guests wear for an evening Sangeet?' },
-      {
-        label: 'Chat: Question Favors',
-        msg: 'What are traditional Maharashtrian wedding favors in Pune?',
-      },
-      {
-        label: 'Chat: Question Sweets',
-        msg: 'Which traditional sweets are customary for a Maharashtrian wedding?',
-      },
-      {
-        label: 'Chat: Question Shehnai',
-        msg: 'What acoustic setup is recommended for a live Shehnai performance?',
-      },
-      {
-        label: 'Chat: Question Mandap',
-        msg: 'Which flowers are traditionally auspicious for the wedding mandap?',
-      },
-    ];
-
-    const chatMetric: ProbeMetric = {
-      section: 'Chat Intent (10 msgs)',
-      totalRuns: chatMessages.length,
-      validCount: 0,
-      latencies: [],
-      finishReasons: {},
-      repairs: 0,
-      truncations: 0,
-    };
-
-    for (const item of chatMessages) {
+  for (const item of chatMessages) {
+    for (let run = 1; run <= runsPerMessage; run++) {
       const t0 = Date.now();
       const prompt = buildChatIntentPrompt(weddingPuneFixture, item.msg);
       try {
-        const res = await jarvisProvider.generateJson({
+        const res = await provider.generateJson({
           system: prompt.system,
           user: prompt.user,
           schemaName: 'chat_intent',
           maxTokens: 2500,
           temperature: 0.2,
-          timeoutMs: 20000,
+          timeoutMs: 25000,
         });
         const elapsed = Date.now() - t0;
-        chatMetric.latencies.push(elapsed);
+        metric.latencies.push(elapsed);
         const finish = res.finishReason || 'stop';
-        chatMetric.finishReasons[finish] = (chatMetric.finishReasons[finish] || 0) + 1;
+        metric.finishReasons[finish] = (metric.finishReasons[finish] || 0) + 1;
         if (finish === 'length') {
-          chatMetric.truncations++;
+          metric.truncations++;
           continue;
         }
 
-        let parsed: any = null;
+        let parsed: unknown = null;
         let parseErr: string | null = null;
         try {
           parsed = extractJsonObject(res.text);
@@ -611,22 +285,23 @@ async function main() {
             userMessage: item.msg,
           });
           if (val.valid) {
-            chatMetric.validCount++;
+            metric.firstAttemptValid++;
+            metric.totalValid++;
             continue;
           }
           parseErr = val.error || 'validation error';
         }
 
-        console.log(`  [Chat Diagnostic] Initial attempt failed for "${item.msg}": ${parseErr}`);
-        chatMetric.repairs++;
+        // First attempt failed -> repair attempt
+        metric.repairs++;
         const repairPrompt = buildRepairPrompt(prompt.user, res.text, parseErr || 'invalid output');
-        const repairRes = await jarvisProvider.generateJson({
+        const repairRes = await provider.generateJson({
           system: prompt.system,
           user: repairPrompt,
           schemaName: 'chat_repair',
           maxTokens: 2500,
           temperature: 0.2,
-          timeoutMs: 15000,
+          timeoutMs: 20000,
         });
         const repairParsed = extractJsonObject(repairRes.text);
         const repairVal = validateOutput(repairParsed, ChatIntentSectionSchema, {
@@ -634,31 +309,192 @@ async function main() {
           userMessage: item.msg,
         });
         if (repairVal.valid) {
-          chatMetric.validCount++;
-        } else {
-          console.log(`  [Chat Diagnostic] Repair also failed: ${repairVal.error}`);
+          metric.totalValid++;
         }
-      } catch (err: any) {
-        console.log(`  [Chat Diagnostic] Error on "${item.msg}": ${err.message}`);
+      } catch {
+        // error
       }
-    }
-    newResults['Chat Intent (10 msgs)'] = chatMetric;
-
-    console.log('\nNEW PIPELINE RESULTS TABLE:');
-    console.log(
-      '| Section                      | Valid % | Avg Lat  | P50 Lat  | Max Lat  | Finish Reasons   | Repairs | Truncations |'
-    );
-    console.log(
-      '|------------------------------|---------|----------|----------|----------|------------------|---------|-------------|'
-    );
-    for (const [name, m] of Object.entries(newResults)) {
-      console.log(formatRow(name, m));
     }
   }
 
-  // --- 5. GOOGLE GEMINI PLAIN + JSON PROBE ---
-  if (GEMINI_API_KEY && GEMINI_MODEL) {
-    console.log('\n--- 5. GOOGLE GEMINI PLAIN & STRUCTURED JSON ---');
+  return metric;
+}
+
+async function main() {
+  console.log('================================================================');
+  console.log('   UTSAV PLANNER - UNIFIED LLM PROBE & BENCHMARK SUITE');
+  console.log('================================================================\n');
+
+  if (!JARVIS_API_KEY) {
+    console.log('SKIPPED: not run: no keys (JARVISLABS_API_KEY is not set)');
+    process.exit(0);
+  }
+
+  console.log(`Base URL: ${JARVIS_BASE_URL}`);
+  console.log(`Model:    ${JARVIS_MODEL}`);
+  console.log(`Key:      [Configured, length: ${JARVIS_API_KEY.length}]`);
+  console.log(
+    'Benchmarking: Default Thinking ({}) vs Thinking Disabled ({ enable_thinking: false })\n'
+  );
+
+  const configs = [
+    {
+      label: 'Default Thinking',
+      extraBody: {},
+    },
+    {
+      label: 'Thinking Off',
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    },
+  ];
+
+  const diffFixture: PlanDiff = {
+    budgetLines: [],
+    cateringEstimateDelta: 0,
+    summaryFacts: [
+      'Total budget updated to ₹45,00,000 (+₹5,00,000)',
+      'Guest count adjusted from 200 to 250 (+50)',
+    ],
+    totalDelta: 500000,
+    flagsAdded: [],
+    flagsRemoved: [],
+    milestonesShifted: [],
+    checklistAdded: [],
+    checklistRemoved: [],
+  };
+
+  const allowedCats = ['venue', 'catering', 'decor', 'photo_video'];
+
+  const results: BenchmarkMetric[] = [];
+
+  for (const cfg of configs) {
+    console.log(`\n>>> EXECUTING BENCHMARK: [${cfg.label}] ...`);
+    const provider = new JarvisProvider({
+      apiKey: JARVIS_API_KEY,
+      baseURL: JARVIS_BASE_URL,
+      model: JARVIS_MODEL,
+      jsonMode: 'prompt_only',
+      extraBody: cfg.extraBody,
+      defaultTimeoutMs: 25000,
+    });
+
+    // 1. Ideas Pune (5 runs)
+    process.stdout.write(`  [${cfg.label}] Ideas - Pune Wedding (5 runs) ... `);
+    const mIdeasPune = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Ideas - Pune Wedding',
+      IdeasSectionSchema,
+      () => buildIdeasPrompt(weddingPuneFixture),
+      { profile: weddingPuneFixture },
+      5
+    );
+    console.log(`Done (${computeStats(mIdeasPune.latencies).avg}ms avg)`);
+    results.push(mIdeasPune);
+
+    // 2. Ideas Indore (5 runs)
+    process.stdout.write(`  [${cfg.label}] Ideas - Kids Indore (5 runs) ... `);
+    const mIdeasIndore = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Ideas - Kids Indore',
+      IdeasSectionSchema,
+      () => buildIdeasPrompt(birthdayKidsIndoreFixture),
+      { profile: birthdayKidsIndoreFixture },
+      5
+    );
+    console.log(`Done (${computeStats(mIdeasIndore.latencies).avg}ms avg)`);
+    results.push(mIdeasIndore);
+
+    // 3. Ideas Mumbai (5 runs)
+    process.stdout.write(`  [${cfg.label}] Ideas - Community Mumbai (5 runs) ... `);
+    const mIdeasMumbai = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Ideas - Community Mumbai',
+      IdeasSectionSchema,
+      () => buildIdeasPrompt(communityGaneshMumbaiFixture),
+      { profile: communityGaneshMumbaiFixture },
+      5
+    );
+    console.log(`Done (${computeStats(mIdeasMumbai.latencies).avg}ms avg)`);
+    results.push(mIdeasMumbai);
+
+    // 4. Menu Pune (5 runs)
+    process.stdout.write(`  [${cfg.label}] Menu - Pune Wedding (5 runs) ... `);
+    const mMenu = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Menu - Pune Wedding',
+      MenuSectionSchema,
+      () => buildMenuPrompt(weddingPuneFixture),
+      { profile: weddingPuneFixture },
+      5
+    );
+    console.log(`Done (${computeStats(mMenu.latencies).avg}ms avg)`);
+    results.push(mMenu);
+
+    // 5. Category Tips Pune (5 runs)
+    process.stdout.write(`  [${cfg.label}] Category Tips - Pune (5 runs) ... `);
+    const mTips = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Category Tips - Pune',
+      CategoryTipsSectionSchema,
+      () => buildCategoryTipsPrompt(weddingPuneFixture, allowedCats),
+      { profile: weddingPuneFixture, allowedCategoryIds: allowedCats },
+      5
+    );
+    console.log(`Done (${computeStats(mTips.latencies).avg}ms avg)`);
+    results.push(mTips);
+
+    // 6. Narrate Diff (5 runs)
+    process.stdout.write(`  [${cfg.label}] Narrate Diff (5 runs) ... `);
+    const mDiff = await runSectionSuite(
+      provider,
+      cfg.label,
+      'Narrate Diff',
+      NarrateDiffSectionSchema,
+      () => buildNarrateDiffPrompt(diffFixture),
+      { profile: weddingPuneFixture, diff: diffFixture },
+      5
+    );
+    console.log(`Done (${computeStats(mDiff.latencies).avg}ms avg)`);
+    results.push(mDiff);
+
+    // 7. Chat Intent (10 msgs x 5 runs = 50 runs)
+    process.stdout.write(`  [${cfg.label}] Chat Intent (10 msgs x 5 runs = 50 runs) ... `);
+    const mChat = await runChatSuite(provider, cfg.label, 5);
+    console.log(`Done (${computeStats(mChat.latencies).avg}ms avg)`);
+    results.push(mChat);
+  }
+
+  // PRINT SIDE-BY-SIDE RAW BENCHMARK TABLE
+  console.log(
+    '\n===================================================================================================================='
+  );
+  console.log(
+    '                        RAW SIDE-BY-SIDE BENCHMARK TABLE (SAME-SESSION LIVE MEASUREMENT)'
+  );
+  console.log(
+    '===================================================================================================================='
+  );
+  console.log(
+    '| Section                      | Config           | 1st-Att Valid % | Avg Lat   | P50 Lat   | Max Lat   | Repairs | Finish (1st) |'
+  );
+  console.log(
+    '|------------------------------|------------------|-----------------|-----------|-----------|-----------|---------|--------------|'
+  );
+  for (const m of results) {
+    console.log(formatRow(m));
+  }
+  console.log(
+    '====================================================================================================================\n'
+  );
+
+  // Optional Gemini probe (guarded so quota is never wasted)
+  if (RUN_GEMINI_PROBE && GEMINI_API_KEY && GEMINI_MODEL) {
+    console.log('\n--- OPTIONAL GEMINI PROBE (--with-gemini passed) ---');
     const genai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
     const t0 = Date.now();
     try {
@@ -667,65 +503,15 @@ async function main() {
         contents: 'Reply in 5 words: What is Utsav?',
       });
       console.log(`Gemini Plain Latency: ${Date.now() - t0}ms | Response: "${res.text?.trim()}"`);
-
-      const tJson = Date.now();
-      const resJson = await genai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: 'Return 2 wedding tips in JSON: {"tips": [{"category": string, "tip": string}]}',
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-        },
-      });
+    } catch (err: unknown) {
+      const details = parseGemini429Details(err as Parameters<typeof parseGemini429Details>[0]);
       console.log(
-        `Gemini JSON Latency: ${Date.now() - tJson}ms | Response: ${resJson.text?.trim()}`
+        `Gemini error details: quotaMetric=${details.quotaMetric}, retryDelay=${details.retryAfterSeconds}s`
       );
-    } catch (err: any) {
-      const details = parseGemini429Details(err);
-      if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
-        console.log(`Gemini 429 Error Details:`);
-        console.log(`  Message: ${err.message}`);
-        console.log(`  Quota Metric: ${details.quotaMetric || 'unknown'}`);
-        console.log(
-          `  RetryDelay: ${details.retryAfterSeconds !== undefined ? `${details.retryAfterSeconds}s` : 'none'}`
-        );
-        console.log(`  Daily Quota: ${details.isDailyQuota}`);
-        console.log('Gemini live: not verified (quota)');
-      } else {
-        console.log(`Gemini error: ${err.message}`);
-      }
     }
-  } else {
-    console.log(
-      '\n--- 5. GOOGLE GEMINI: SKIPPED (no GEMINI_API_KEY / GEMINI_MODEL configured) ---'
-    );
   }
 
-  // --- 6. SEARCH GROUNDING (IF ENABLED) ---
-  if (GROUNDING_ENABLED && GEMINI_API_KEY && GEMINI_MODEL) {
-    console.log('\n--- 6. GEMINI SEARCH GROUNDING ---');
-    const genai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    const t0 = Date.now();
-    try {
-      const res = await genai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: 'What are the dates for Ganesh Chaturthi 2027 in India?',
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      });
-      const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      console.log(`Grounding Latency: ${Date.now() - t0}ms | Sources found: ${chunks.length}`);
-    } catch (err) {
-      console.log(`Grounding error: ${(err as Error).message}`);
-    }
-  } else {
-    console.log('\n--- 6. GEMINI SEARCH GROUNDING: SKIPPED (GROUNDING_ENABLED is false) ---');
-  }
-
-  console.log('\n================================================================');
-  console.log('   PROBE BENCHMARK COMPLETE');
-  console.log('================================================================\n');
+  console.log('Benchmark session finished successfully.');
 }
 
 main().catch((err) => {

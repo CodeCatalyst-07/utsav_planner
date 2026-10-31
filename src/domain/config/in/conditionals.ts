@@ -1,0 +1,88 @@
+import { ConditionalChecklistRule } from '../types';
+
+export const conditionalRules: ConditionalChecklistRule[] = [
+  {
+    id: 'destination_venue',
+    condition: 'destination_venue',
+    item: {
+      id: 'travel_stay',
+      label: 'Destination Travel & Stay Logistics',
+      budgetCategory: 'venue',
+      priority: 'high',
+      leadDays: 240,
+      mapsQueryTemplate: 'Group Travel and Coach Services in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Destination wedding requires early guest transit and group room blocks.',
+  },
+  {
+    id: 'monsoon_outdoor',
+    condition: 'monsoon_outdoor',
+    item: {
+      id: 'backup_tent',
+      label: 'Waterproof German Hangar / Monsoon Canopy',
+      budgetCategory: 'venue',
+      priority: 'high',
+      leadDays: 60,
+      mapsQueryTemplate: 'Waterproof German Hangar in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Outdoor venue during monsoon season (June-September) mandates waterproof shelter.',
+  },
+  {
+    id: 'jain_dietary',
+    condition: 'jain_dietary',
+    item: {
+      id: 'jain_kitchen_setup',
+      label: 'Separate Jain Catering Counter & Dedicated Fryers',
+      budgetCategory: 'catering',
+      priority: 'high',
+      leadDays: 45,
+      mapsQueryTemplate: 'Pure Vegetarian Jain Caterers in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Separate Jain counter/kitchen without root vegetables (onion, garlic, potato).',
+  },
+  {
+    id: 'vegan_dietary',
+    condition: 'vegan_dietary',
+    item: {
+      id: 'vegan_dairy_free',
+      label: 'Dairy-Free & Vegan Specialty Menu Section',
+      budgetCategory: 'catering',
+      priority: 'medium',
+      leadDays: 45,
+      mapsQueryTemplate: 'Vegan Caterers in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Separate vegan dairy-free catering section and dessert labeling.',
+  },
+  {
+    id: 'kids_birthday_safety',
+    condition: 'kids_birthday_safety',
+    item: {
+      id: 'child_first_aid',
+      label: 'Pediatric First Aid Kit & Safe Play Marshalling',
+      budgetCategory: 'entertainment',
+      priority: 'high',
+      leadDays: 7,
+      mapsQueryTemplate: 'Pediatric First Aid Kits in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Kids birthdays require mandatory high-priority safety and first-aid kits.',
+  },
+  {
+    id: 'multi_function_wedding',
+    condition: 'multi_function_wedding',
+    item: {
+      id: 'multi_function_flow',
+      label: 'Per-Function Run-of-Show & Stage Management',
+      budgetCategory: 'rituals_misc',
+      priority: 'high',
+      leadDays: 30,
+      mapsQueryTemplate: 'Stage Management in {cityName}',
+      source: 'assumption',
+    },
+    note: 'Multi-day wedding requires separate coordinated run-of-show sheets per ceremony.',
+  },
+];

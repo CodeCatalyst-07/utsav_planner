@@ -13,6 +13,59 @@ export interface JarvisProviderOptions {
   client?: OpenAI;
 }
 
+export interface JarvisMessageShape {
+  content?: string | null;
+  reasoning_content?: string | null;
+}
+
+/**
+ * Builds OpenAI-compatible request payload for Jarvis Labs inference endpoints.
+ * Precedence:
+ * 1. Base parameters (model, messages, temp, max_tokens, jsonMode)
+ * 2. Per-section reasoning policy default (reasoning: 'off' -> enable_thinking: false)
+ * 3. Request-level extraBody
+ * 4. Global override (JARVIS_EXTRA_BODY_JSON / extraBody option)
+ */
+export function buildJarvisRequestBody(
+  model: string,
+  req: GenerateJsonRequest,
+  options?: {
+    jsonMode?: 'prompt_only' | 'response_format';
+    extraBody?: Record<string, unknown>;
+  }
+): OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
+  const jsonMode = options?.jsonMode ?? 'prompt_only';
+  const globalExtra = options?.extraBody ?? {};
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: req.system },
+      { role: 'user', content: req.user },
+    ],
+    temperature: req.temperature ?? 0.3,
+    max_tokens: req.maxTokens,
+    ...(jsonMode === 'response_format' ? { response_format: { type: 'json_object' } } : {}),
+  };
+
+  // 1. Per-section reasoning policy
+  if (req.reasoning === 'off') {
+    payload.chat_template_kwargs = { enable_thinking: false };
+  }
+
+  // 2. Request-level extraBody
+  if (req.extraBody) {
+    Object.assign(payload, req.extraBody);
+  }
+
+  // 3. Global override remains supreme
+  if (globalExtra && Object.keys(globalExtra).length > 0) {
+    Object.assign(payload, globalExtra);
+  }
+
+  return payload as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+}
+
 export class JarvisProvider implements LLMProvider {
   readonly name = 'jarvis' as const;
 
@@ -83,19 +136,10 @@ export class JarvisProvider implements LLMProvider {
     }
 
     try {
-      const requestPayload: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-        model: this.model,
-        messages: [
-          { role: 'system', content: req.system },
-          { role: 'user', content: req.user },
-        ],
-        temperature: req.temperature ?? 0.3,
-        max_tokens: req.maxTokens,
-        ...(this.jsonMode === 'response_format'
-          ? { response_format: { type: 'json_object' } }
-          : {}),
-        ...this.extraBody,
-      };
+      const requestPayload = buildJarvisRequestBody(this.model, req, {
+        jsonMode: this.jsonMode,
+        extraBody: this.extraBody,
+      });
 
       const completion = await this.client.chat.completions.create(requestPayload, {
         signal: controller.signal,
@@ -103,7 +147,7 @@ export class JarvisProvider implements LLMProvider {
 
       const choice = completion.choices?.[0];
       const finishReason = choice?.finish_reason || undefined;
-      const msg = choice?.message as any;
+      const msg = choice?.message as JarvisMessageShape | undefined;
       const rawContent =
         msg?.content && typeof msg.content === 'string' && msg.content.trim()
           ? msg.content

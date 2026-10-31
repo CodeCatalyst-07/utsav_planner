@@ -58,7 +58,7 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
       geminiBreaker,
       cache: testCache,
       critic: criticMock ?? {
-        evaluateSections: vi.fn().mockResolvedValue({ approved: true, issues: [] }),
+        evaluateSections: vi.fn().mockResolvedValue({ status: 'skipped' }),
         isEnabled: () => false,
       },
       now: () => currentTime,
@@ -318,8 +318,11 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
     const criticMock = {
       isEnabled: () => true,
       evaluateSections: vi.fn().mockResolvedValueOnce({
-        approved: false,
-        issues: [{ section: 'ideas', problem: 'Lacks traditional marigold theme' }],
+        status: 'ran',
+        verdict: {
+          approved: false,
+          issues: [{ section: 'ideas', problem: 'Lacks traditional marigold theme' }],
+        },
       }),
     };
 
@@ -604,7 +607,10 @@ describe('AI Failover Chain (src/server/ai/chain.ts)', () => {
 
     const criticMock = {
       isEnabled: () => true,
-      evaluateSections: vi.fn().mockResolvedValueOnce({ approved: true, issues: [] }),
+      evaluateSections: vi.fn().mockResolvedValueOnce({
+        status: 'ran',
+        verdict: { approved: true, issues: [] },
+      }),
     };
 
     const chain = createChain(criticMock);

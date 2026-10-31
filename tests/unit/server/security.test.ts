@@ -59,6 +59,38 @@ describe('Security Utilities (src/server/security/)', () => {
       expect(ip).toBe('203.0.113.195');
     });
 
+    it('prefers x-vercel-forwarded-for over x-forwarded-for when running on Vercel', () => {
+      const headers = new Headers();
+      headers.set('x-vercel-forwarded-for', '198.51.100.99, 10.0.0.1');
+      headers.set('x-forwarded-for', '203.0.113.195, 70.41.3.18');
+
+      const ip = getClientIp(headers);
+      expect(ip).toBe('198.51.100.99');
+    });
+
+    it('enforces custom daily limit of 60 requests/client/day on token bucket', () => {
+      let now = 1_000_000;
+      const limiter = new TokenBucketRateLimiter({
+        limit: 10,
+        windowMs: 1_000, // fast refill to test daily cap independently
+        dailyLimit: 60,
+        now: () => now,
+      });
+
+      // Consume 60 requests across 6 seconds
+      for (let i = 0; i < 60; i++) {
+        now += 150;
+        const res = limiter.check('test-client');
+        expect(res.allowed).toBe(true);
+      }
+
+      // 61st request must be denied by daily cap
+      now += 200;
+      const blocked = limiter.check('test-client');
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
+    });
+
     it('falls back to x-real-ip or anonymous when headers are missing', () => {
       const realIpHeaders = new Headers();
       realIpHeaders.set('x-real-ip', '198.51.100.25');

@@ -32,7 +32,7 @@ Utsav Planner is designed with a defense-in-depth security model, strictly enfor
 
 - **Threat**: Malicious scraping, repeated LLM generation requests draining provider quotas, or oversize JSON payloads causing memory exhaustion.
 - **Mitigations**:
-  - **Dual-Tier Rate Limiting**: In-memory token bucket rate limiting ([rateLimit.ts](file:///Users/arnav/Desktop/event_planner/src/server/security/rateLimit.ts)) applies a 10 req/min limit on AI endpoints (`/api/ai/*`) and 60 req/min on standard endpoints (`/api/*`), returning `429 Too Many Requests` with RFC-compliant `Retry-After` headers.
+  - **Dual-Tier & Daily Rate Limiting**: In-memory token bucket rate limiting ([rateLimit.ts](file:///Users/arnav/Desktop/event_planner/src/server/security/rateLimit.ts)) applies a 10 req/min limit on AI endpoints (`/api/ai/*`), a daily cap via `LLM_DAILY_LIMIT` (default 60 requests/client/day), and 60 req/min on standard endpoints (`/api/*`), returning `429 Too Many Requests` with RFC-compliant `Retry-After` headers. Client IP resolution strictly prioritizes Vercel's edge proxy header `x-vercel-forwarded-for`, followed by the first hop of `x-forwarded-for`, and finally `x-real-ip`.
   - **Circuit Breaker**: Provider circuit breakers ([circuitBreaker.ts](file:///Users/arnav/Desktop/event_planner/src/server/security/circuitBreaker.ts)) trip on consecutive upstream failures or HTTP 429 quota errors. When Gemini returns 429 quota exhaustion with `retryDelay`, the breaker opens for that duration (capped at 5 minutes for per-minute quotas, and 30 minutes for daily quotas), preventing futile upstream calls.
   - **Payload Size Guards**: API route helpers ([apiHelper.ts](file:///Users/arnav/Desktop/event_planner/src/server/apiHelper.ts)) reject any incoming JSON request exceeding 100 KB with HTTP 413.
   - **Strict Request Timeouts & Deadlines**: Every AI call enforces an upstream timeout (default 8s) and a hard end-to-end deadline (`AI_TOTAL_DEADLINE_MS=15000`), terminating slow responses before Vercel gateway timeouts.
@@ -43,7 +43,7 @@ Utsav Planner is designed with a defense-in-depth security model, strictly enfor
   - Event metadata: `eventType`, `cityName`, `cityTier`, `budgetTier`, `venueType`, and `guestCount`.
   - Dietary ratios: percentages for `veg`, `nonVeg`, and `jain`.
   - Plan diff facts: deterministic summary delta strings and shifted milestone titles (for diff narration).
-  - Free-text notes / Chat messages: the user's aesthetic notes or chat prompts. The UI explicitly alerts users in the wizard: _"Please do not include personal identifiable information like phone numbers or bank details in your notes."_
+  - Free-text notes / Chat messages: the user's aesthetic notes or chat prompts. The UI provides a real-time, non-blocking privacy alert in Step 4 if phone numbers or email patterns are detected. On the server, `sanitizeUserNotes` automatically redacts phone numbers and email addresses to `[removed]` before forwarding user notes to external LLM providers.
 - **Server-Side Data Storage**:
   - **Zero Server-Side Storage**: Utsav Planner maintains **no server-side database**, no session cookies, and stores zero personal data on its servers. All event plans, overrides, and chat histories reside entirely in the user's browser `localStorage`.
   - **Ephemeral Server State**: In-memory caches and rate-limit buckets store only cryptographic hashes (`sha256`) of prompt inputs and client IP hashes, with automatic TTL eviction.

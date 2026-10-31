@@ -55,14 +55,28 @@ export function parseGemini429Details(err: unknown): {
   let isDailyQuota = false;
   let quotaMetric: string | undefined;
 
-  const errorObj = err as any;
+  const errorObj = err as {
+    message?: string;
+    errorDetails?: Array<Record<string, unknown>>;
+    details?: Array<Record<string, unknown>>;
+    error?: { details?: Array<Record<string, unknown>> };
+    response?: {
+      headers?: Headers | Record<string, string | undefined>;
+    };
+  } | null;
   const msg = (errorObj?.message || '').toString();
 
   // Check if error message is stringified JSON
-  let innerPayload: any = null;
+  let innerPayload: {
+    error?: { details?: Array<Record<string, unknown>> };
+    details?: Array<Record<string, unknown>>;
+  } | null = null;
   try {
     if (typeof msg === 'string' && msg.trim().startsWith('{')) {
-      innerPayload = JSON.parse(msg.trim());
+      const parsed = JSON.parse(msg.trim());
+      if (typeof parsed === 'object' && parsed !== null) {
+        innerPayload = parsed;
+      }
     }
   } catch {
     // not JSON
@@ -91,15 +105,16 @@ export function parseGemini429Details(err: unknown): {
 
   if (Array.isArray(details)) {
     for (const d of details) {
-      if (d?.['@type']?.includes('RetryInfo') && d.retryDelay) {
+      const typeStr = String(d?.['@type'] || '');
+      if (typeStr.includes('RetryInfo') && d.retryDelay) {
         const parsedSec = parseGoDuration(String(d.retryDelay));
         if (parsedSec !== null) retryAfterSeconds = parsedSec;
       }
-      if (d?.['@type']?.includes('QuotaFailure')) {
+      if (typeStr.includes('QuotaFailure')) {
         const desc = JSON.stringify(d.violations || '');
         if (/day/i.test(desc)) isDailyQuota = true;
         if (!quotaMetric && Array.isArray(d.violations) && d.violations[0]?.quotaMetric) {
-          quotaMetric = d.violations[0].quotaMetric;
+          quotaMetric = String(d.violations[0].quotaMetric);
         }
       }
     }
@@ -116,10 +131,13 @@ export function parseGemini429Details(err: unknown): {
   }
 
   if (retryAfterSeconds === undefined && errorObj?.response?.headers) {
+    const headers = errorObj.response.headers;
     const headerVal =
-      typeof errorObj.response.headers.get === 'function'
-        ? errorObj.response.headers.get('retry-after')
-        : errorObj.response.headers['retry-after'];
+      headers instanceof Headers
+        ? headers.get('retry-after')
+        : typeof (headers as { get?: unknown }).get === 'function'
+          ? (headers as unknown as Headers).get('retry-after')
+          : (headers as Record<string, string | undefined>)['retry-after'];
     if (headerVal) {
       const parsed = parseInt(headerVal, 10);
       if (!isNaN(parsed)) retryAfterSeconds = parsed;
