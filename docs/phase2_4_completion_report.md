@@ -5,7 +5,9 @@ All goals of Phase 2.4 have been implemented and verified. Per instructions, **n
 ---
 
 ## Commands Run with Elevated Permission (Sandbox Bypass)
+
 Per the execution plan, network-dependent tools and browser socket connections were run with standard sandbox elevation for that command only:
+
 1. `pnpm audit --prod` (remote npm registry vulnerability check)
 2. `pnpm build` (Google Fonts prefetching during Next.js static page generation)
 3. `pnpm probe:llm` (live HTTPS benchmark to JarvisLabs Gemma-4-31B and Google Gemini endpoints)
@@ -18,6 +20,7 @@ Per the execution plan, network-dependent tools and browser socket connections w
 ## Step 0: AI Reliability Close-Out & Live Probe Reconciliation
 
 ### a) & b) Live Probe Benchmark, Reasoning Toggles & Gemini Quota
+
 Raw execution output from [scripts/probe-llm.ts](file:///Users/arnav/Desktop/event_planner/scripts/probe-llm.ts):
 
 ```text
@@ -113,6 +116,7 @@ Gemini live: not verified (quota)
 ```
 
 ### Reconciliation Findings
+
 1. **Root Cause of Old Probe Failures (0–40% valid)**:
    - **Token Budget Starvation**: Gemma-4-31B generates extensive chain-of-thought tokens before closing JSON. A 400 max-token budget truncated outputs mid-sentence (`finish_reason: length`). Raising `max_tokens` to the production budget (2500) yielded **100% valid** results across all sections with `finish_reason: stop`.
    - **JSON Extraction**: The old regex naive matcher failed on reasoning markdown artifacts (`<thought>` tags and preamble). [src/server/ai/jsonExtract.ts](file:///Users/arnav/Desktop/event_planner/src/server/ai/jsonExtract.ts) properly balances braces and strips non-JSON wrappers.
@@ -130,12 +134,14 @@ Gemini live: not verified (quota)
 ## 1. Security Hardening
 
 ### a) Production Dependency Audit
+
 ```text
 $ pnpm audit --prod
 No known vulnerabilities found
 ```
 
 ### b) Gitleaks Scan over Git History
+
 ```text
 $ gitleaks version && gitleaks git --verbose
 8.30.1
@@ -152,6 +158,7 @@ $ gitleaks version && gitleaks git --verbose
 ```
 
 Fallback regex scan across all git commits:
+
 ```text
 $ git log -p --all | grep -E "AIzaSy[0-9A-Za-z_-]{33}|[0-9a-f]{32}" | grep -v "00000000000000000000000000000000" | head -n 30 || true
 commit 9984f230d26e1d3af193a0c7257d9bfe1d5a2c6b
@@ -161,6 +168,7 @@ commit f01ec1f25b3ac77b47736b932ec6fece65aecbd6
 ```
 
 ### c) Client Static Bundle Secret Scan
+
 ```text
 $ grep -rn "JARVISLABS_API_KEY\|GEMINI_API_KEY\|GOOGLE_PLACES_API_KEY" .next/static || echo "CLEAN: 0 secret env names in client bundles"
 CLEAN: 0 secret env names in client bundles
@@ -170,6 +178,7 @@ CLEAN: 0 key patterns in client bundles
 ```
 
 ### d) Security Headers on `/` and `/api/health`
+
 ```text
 $ curl -I http://127.0.0.1:3001/
 HTTP/1.1 200 OK
@@ -211,6 +220,7 @@ Keep-Alive: timeout=5
 ```
 
 ### e) Playwright Console Error & CSP Violation E2E Suite
+
 Configured `z.config({ jitless: true })` in [src/domain/schemas/profile.ts](file:///Users/arnav/Desktop/event_planner/src/domain/schemas/profile.ts) and [src/domain/config/in/index.ts](file:///Users/arnav/Desktop/event_planner/src/domain/config/in/index.ts) to eliminate Zod v4 JIT function probe evaluation under strict CSP.
 
 ```text
@@ -245,25 +255,29 @@ Running 14 tests using 5 workers
 ## 2. Test Hardening & Coverage
 
 ### a) Per-File Coverage Thresholds
+
 Thresholds enforced in [vitest.config.ts](file:///Users/arnav/Desktop/event_planner/vitest.config.ts):
+
 - `src/server/ai/chain.ts`: Lines >= 90%, Branches >= 80% (Achieved: **97.86% Lines, 84.49% Branches**)
 - `src/server/ai/critic.ts`: Branches >= 80% (Achieved: **83.33% Branches**)
 - `src/server/vendors/places.ts`: Branches >= 80% (Achieved: **91.42% Branches**)
 
 ```text
 -------------------|---------|----------|---------|---------|-------------------
-File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
 -------------------|---------|----------|---------|---------|-------------------
- server/ai         |   93.09 |     82.5 |     100 |   93.09 |                   
-  chain.ts         |   97.86 |    84.49 |     100 |   97.86 | ...34-135,296-302 
-  critic.ts        |    97.5 |    83.33 |     100 |    97.5 | 33-34             
- server/vendors    |   97.17 |    80.28 |     100 |   97.17 |                   
-  places.ts        |   98.27 |    91.42 |     100 |   98.27 | 61-62             
+ server/ai         |   93.09 |     82.5 |     100 |   93.09 |
+  chain.ts         |   97.86 |    84.49 |     100 |   97.86 | ...34-135,296-302
+  critic.ts        |    97.5 |    83.33 |     100 |    97.5 | 33-34
+ server/vendors    |   97.17 |    80.28 |     100 |   97.17 |
+  places.ts        |   98.27 |    91.42 |     100 |   98.27 | 61-62
 -------------------|---------|----------|---------|---------|-------------------
 ```
+
 Total Vitest tests: **387 tests passing**.
 
 ### b) LLM Evaluation Harness: Positive Scenarios & Negative Adversarial Attacks
+
 Harness in [evals/runner.ts](file:///Users/arnav/Desktop/event_planner/evals/runner.ts) running across 12 culturally neutral scenarios and 6 poisoned negative fixtures:
 
 ```text
@@ -314,6 +328,7 @@ Total Scenarios: 12
 ## 3. Accessibility Final
 
 ### a) 200% Zoom Reflow, High-Contrast & Reduced-Motion Playwright Suite
+
 Verified with [tests/e2e/accessibility-deep.spec.ts](file:///Users/arnav/Desktop/event_planner/tests/e2e/accessibility-deep.spec.ts). Screenshots saved to `docs/screenshots/forced-colors/`.
 
 ```text
@@ -360,6 +375,7 @@ Running 30 tests using 5 workers
 ```
 
 ### b) Server Route `<title>` and Theme Color
+
 - Theme color in [src/app/layout.tsx](file:///Users/arnav/Desktop/event_planner/src/app/layout.tsx): `#7A1F3D` (Royal Maroon brand primary).
 - Favicon in [src/app/icon.svg](file:///Users/arnav/Desktop/event_planner/src/app/icon.svg): Generated strictly from brand tokens (`#7A1F3D`, `#F59E0B`, `#FFF8F0`).
 - Route `<title>` metadata exported from server layouts:
@@ -376,6 +392,7 @@ Running 30 tests using 5 workers
 ## 4. Deployment Readiness & Smoke Verification
 
 ### a) Smoke API Suite Against Deployed/Production Port
+
 ```text
 $ BASE_URL=http://127.0.0.1:3001 pnpm smoke:api
 $ tsx scripts/smoke-api.ts
@@ -427,6 +444,7 @@ $ tsx scripts/smoke-api.ts
 ```
 
 ### b) Production E2E Smoke Tests
+
 ```text
 $ BASE_URL=http://127.0.0.1:3001 pnpm test:e2e:prod
 $ playwright test tests/e2e/smoke.spec.ts
@@ -445,7 +463,9 @@ Running 4 tests using 4 workers
 ```
 
 ### c) Full E2E Test Suite Status
+
 Running the complete Playwright E2E suite against the production build:
+
 ```text
 $ BASE_URL=http://127.0.0.1:3001 pnpm exec playwright test --workers=2
 Running 78 tests using 2 workers
@@ -456,6 +476,7 @@ Running 78 tests using 2 workers
 ---
 
 ## 5. Documentation & Repo Artifacts
+
 - [SECURITY.md](file:///Users/arnav/Desktop/event_planner/SECURITY.md): Threat model, exact profile fields sent to LLM providers, zero server-side persistence statement, Upstash rate-limit upgrade path.
 - [LICENSE](file:///Users/arnav/Desktop/event_planner/LICENSE): MIT License added.
 - [docs/accessibility.md](file:///Users/arnav/Desktop/event_planner/docs/accessibility.md): Full keyboard map, screen reader patterns, zoom/reflow metrics, forced colors results.
