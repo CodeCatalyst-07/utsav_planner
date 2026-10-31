@@ -15,7 +15,8 @@ async function main() {
   let geminiModel = 'gemini-2.5-flash';
   for (const line of lines) {
     if (line.startsWith('GEMINI_API_KEY=')) geminiKey = line.split('=')[1]?.trim() || '';
-    if (line.startsWith('GEMINI_MODEL=')) geminiModel = line.split('=')[1]?.trim() || 'gemini-2.5-flash';
+    if (line.startsWith('GEMINI_MODEL='))
+      geminiModel = line.split('=')[1]?.trim() || 'gemini-2.5-flash';
   }
 
   const allowedCategoryIds = ['venue', 'catering', 'decor', 'photo_video', 'attire_jewellery'];

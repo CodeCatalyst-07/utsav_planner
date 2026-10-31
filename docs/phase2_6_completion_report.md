@@ -3,7 +3,7 @@
 > **Branch**: `main`  
 > **Status**: Complete & Verified Green  
 > **Live Deployed Vercel URL**: [https://utsavplanner-xi.vercel.app/](https://utsavplanner-xi.vercel.app/)  
-> **Repository**: [https://github.com/CodeCatalyst-07/utsav_planner.git](https://github.com/CodeCatalyst-07/utsav_planner.git)  
+> **Repository**: [https://github.com/CodeCatalyst-07/utsav_planner.git](https://github.com/CodeCatalyst-07/utsav_planner.git)
 
 ---
 
@@ -12,9 +12,11 @@
 ### 1. Reasoning Baseline Measurement & Explanation
 
 #### Provenance of Phase 2.5 Numbers
+
 In the Phase 2.5 report, the baseline table (reporting 1.65–2.1s per section) reflected unmeasured mock placeholder values embedded in `scripts/probe-llm.ts` (lines 334–364) drafted when the command ran inside network isolation. Those numbers were not live measurements. All mock data has been completely eliminated.
 
 #### Live Single-Session Measurement
+
 Both **Default Thinking (`{}`)** and **Thinking Disabled (`{"chat_template_kwargs":{"enable_thinking":false}}`)** were measured back-to-back in **ONE single execution session** using identical prompts, schemas, and live Jarvis API calls:
 
 ```
@@ -86,6 +88,7 @@ export const SECTION_REASONING_POLICY: Record<SectionType, 'off' | 'default'> = 
 ```
 
 #### Speedup & Accuracy Evidence
+
 - **Ideas**: 5379ms -> 1708ms (**3.1x speedup**, 100% valid)
 - **Category Tips**: 4845ms -> 1822ms (**2.7x speedup**, 100% valid)
 - **Narrate Diff**: 3293ms -> 758ms (**4.3x speedup**, 100% valid)
@@ -98,20 +101,25 @@ export const SECTION_REASONING_POLICY: Record<SectionType, 'off' | 'default'> = 
 ### 3. Critic Honesty
 
 #### Root Cause of False `approved: true`
+
 Previously, `src/server/ai/critic.ts` returned a default object `{ approved: true, issues: [] }` even when `CRITIC_ENABLED=false` or when the critic network call failed. This misled clients into believing the critic had run and passed.
 
 #### Fix & Verification
+
 - `evaluateWithCritic` now returns `CriticEvaluationResult` with `status: 'skipped' | 'ran' | 'failed'`.
 - When skipped or failed, `criticVerdict` is **completely omitted** from the response meta.
 - When run, `meta.critic: 'ran'` and `criticVerdict` is included.
 
 #### Raw Evidence (CRITIC_ENABLED=false, Live Server):
+
 ```bash
 curl -s -X POST http://localhost:3000/api/ai/section \
   -H "Content-Type: application/json" \
   -d '{"profile":{"eventType":"wedding","eventDate":"2027-02-15","cityTier":"tier1","cityName":"Pune","guestCount":200,"totalBudgetInr":4000000,"budgetTier":"mid","venueType":"lawn","functionsCount":2,"dietary":{"veg":160,"nonVeg":30,"jain":10,"vegan":0},"toggles":{"venueIncluded":false,"includeAttireJewellery":true},"overrides":{}},"section":"ideas"}'
 ```
+
 **Raw Response:**
+
 ```json
 {
   "data": {
@@ -141,7 +149,8 @@ curl -s -X POST http://localhost:3000/api/ai/section \
   }
 }
 ```
-*(Notice: `critic: "skipped"`, zero false `criticVerdict`)*
+
+_(Notice: `critic: "skipped"`, zero false `criticVerdict`)_
 
 ---
 
@@ -150,13 +159,16 @@ curl -s -X POST http://localhost:3000/api/ai/section \
 Conducted with `ALLOW_PROVIDER_OVERRIDE=true` locally against the Next.js API:
 
 #### 1. Force Gemini for Ideas (`x-force-provider: gemini`)
+
 ```bash
 curl -s -X POST http://localhost:3000/api/ai/section \
   -H "Content-Type: application/json" \
   -H "x-force-provider: gemini" \
   -d '{"profile":{...},"section":"ideas"}'
 ```
+
 **Raw Output:**
+
 ```json
 {
   "data": {
@@ -188,26 +200,56 @@ curl -s -X POST http://localhost:3000/api/ai/section \
 ```
 
 #### 2. Force Gemini for Category Tips (`x-force-provider: gemini`)
+
 ```bash
 curl -s -X POST http://localhost:3000/api/ai/section \
   -H "Content-Type: application/json" \
   -H "x-force-provider: gemini" \
   -d '{"profile":{...},"section":"category_tips"}'
 ```
+
 **Raw Output:**
+
 ```json
 {
   "data": {
     "tips": [
-      {"categoryId":"venue","tip":"When selecting your venue in Pune, consider its accessibility for out-of-town guests and ensure ample parking or valet services are available."},
-      {"categoryId":"catering","tip":"Embrace Pune's culinary heritage! Include local Maharashtrian delicacies like Puran Poli, Misal Pav, and authentic Kolhapuri dishes in your menu."},
-      {"categoryId":"decor","tip":"For a traditional touch, incorporate local flowers like marigolds and mogras. Consider a 'Warli art' inspired backdrop for a unique cultural flair."},
-      {"categoryId":"photo_video","tip":"Hire a photographer familiar with capturing the vibrant energy of Maharashtrian weddings, including candid shots of traditional rituals like the Haldi and Saptapadi."},
-      {"categoryId":"attire_jewellery","tip":"For the bride, consider a traditional Paithani saree, known for its rich silk and intricate zari work, paired with Maharashtrian 'Thushi' or 'Kolhapuri Saaj' jewellery."},
-      {"categoryId":"entertainment","tip":"Arrange for a live 'Dhol Tasha' performance to energize your baraat and reception, adding an authentic Pune festive atmosphere."},
-      {"categoryId":"stationery_gifts","tip":"For wedding favors, consider local Pune specialties like 'Bakarwadi' or handcrafted items from local artisans, reflecting the city's charm."},
-      {"categoryId":"rituals_misc","tip":"Familiarize your planner with specific Maharashtrian rituals like Sakhar Puda (engagement), Haldi, Saptapadi, and the importance of the 'Mangalsutra'."},
-      {"categoryId":"contingency","tip":"Given Pune's climate, especially during monsoon season, ensure your venue has robust indoor backup options and clear communication plans for weather changes."}
+      {
+        "categoryId": "venue",
+        "tip": "When selecting your venue in Pune, consider its accessibility for out-of-town guests and ensure ample parking or valet services are available."
+      },
+      {
+        "categoryId": "catering",
+        "tip": "Embrace Pune's culinary heritage! Include local Maharashtrian delicacies like Puran Poli, Misal Pav, and authentic Kolhapuri dishes in your menu."
+      },
+      {
+        "categoryId": "decor",
+        "tip": "For a traditional touch, incorporate local flowers like marigolds and mogras. Consider a 'Warli art' inspired backdrop for a unique cultural flair."
+      },
+      {
+        "categoryId": "photo_video",
+        "tip": "Hire a photographer familiar with capturing the vibrant energy of Maharashtrian weddings, including candid shots of traditional rituals like the Haldi and Saptapadi."
+      },
+      {
+        "categoryId": "attire_jewellery",
+        "tip": "For the bride, consider a traditional Paithani saree, known for its rich silk and intricate zari work, paired with Maharashtrian 'Thushi' or 'Kolhapuri Saaj' jewellery."
+      },
+      {
+        "categoryId": "entertainment",
+        "tip": "Arrange for a live 'Dhol Tasha' performance to energize your baraat and reception, adding an authentic Pune festive atmosphere."
+      },
+      {
+        "categoryId": "stationery_gifts",
+        "tip": "For wedding favors, consider local Pune specialties like 'Bakarwadi' or handcrafted items from local artisans, reflecting the city's charm."
+      },
+      {
+        "categoryId": "rituals_misc",
+        "tip": "Familiarize your planner with specific Maharashtrian rituals like Sakhar Puda (engagement), Haldi, Saptapadi, and the importance of the 'Mangalsutra'."
+      },
+      {
+        "categoryId": "contingency",
+        "tip": "Given Pune's climate, especially during monsoon season, ensure your venue has robust indoor backup options and clear communication plans for weather changes."
+      }
     ]
   },
   "meta": {
@@ -221,9 +263,11 @@ curl -s -X POST http://localhost:3000/api/ai/section \
   }
 }
 ```
-*(Notice: All 9 category IDs strictly match the allowed schema: `venue`, `catering`, `decor`, `photo_video`, `attire_jewellery`, `entertainment`, `stationery_gifts`, `rituals_misc`, `contingency`)*
+
+_(Notice: All 9 category IDs strictly match the allowed schema: `venue`, `catering`, `decor`, `photo_video`, `attire_jewellery`, `entertainment`, `stationery_gifts`, `rituals_misc`, `contingency`)_
 
 #### 3. Live Failover Demo (Invalid Jarvis Key -> Gemini Answers Cleanly)
+
 ```
 --- DEMO FAILOVER: Invalid Jarvis Key -> Gemini Answers Cleanly ---
 {"timestamp":"2026-10-31T10:08:15.285Z","level":"WARN","requestId":"demo_failover","route":"chain","provider":"jarvis","status":"warn","latencyMs":531,"message":"LLM provider error","extra":{"attemptNumber":1,"errorKind":"auth","outputLength":0}}
@@ -240,6 +284,7 @@ Response Meta:
   "critic": "skipped"
 }
 ```
+
 **Quota Conservation**: Exactly 4 Gemini requests were executed across this entire test session, preserving the 20 requests/day free-tier ceiling.
 
 ---
@@ -248,13 +293,13 @@ Response Meta:
 
 The codebase, `README.md`, `SECURITY.md`, and `docs/` were swept to eliminate all inaccuracies:
 
-| Inaccurate / Stale Claim | Real Ground-Truth Fact | Files Corrected |
-| :--- | :--- | :--- |
-| Brand Colors `#D4AF37` & `#FDFBF7` | Real Tokens: Primary `#7A1F3D`, Accent `#F59E0B`, Background `#FFF8F0` | `README.md`, `docs/accessibility.md`, `SECURITY.md` |
-| Primary Contrast on White `9.45:1` | Real Measured Contrast: **`10.04:1`** (WCAG AAA) | `docs/accessibility.md` |
-| "4-step wizard" | Real Structure: **5-step wizard** (Event, Date/City, Guests/Budget, Details, Review) | `README.md`, `docs/architecture.md` |
-| "What-If sliders" | Real Controls: **Steppers and numeric inputs** with keyboard support | `README.md`, `docs/accessibility.md` |
-| "Vendor category filter combobox" | Real Controls: **Priority groups & category pills** (combobox does not exist) | `docs/` |
+| Inaccurate / Stale Claim           | Real Ground-Truth Fact                                                               | Files Corrected                                     |
+| :--------------------------------- | :----------------------------------------------------------------------------------- | :-------------------------------------------------- |
+| Brand Colors `#D4AF37` & `#FDFBF7` | Real Tokens: Primary `#7A1F3D`, Accent `#F59E0B`, Background `#FFF8F0`               | `README.md`, `docs/accessibility.md`, `SECURITY.md` |
+| Primary Contrast on White `9.45:1` | Real Measured Contrast: **`10.04:1`** (WCAG AAA)                                     | `docs/accessibility.md`                             |
+| "4-step wizard"                    | Real Structure: **5-step wizard** (Event, Date/City, Guests/Budget, Details, Review) | `README.md`, `docs/architecture.md`                 |
+| "What-If sliders"                  | Real Controls: **Steppers and numeric inputs** with keyboard support                 | `README.md`, `docs/accessibility.md`                |
+| "Vendor category filter combobox"  | Real Controls: **Priority groups & category pills** (combobox does not exist)        | `docs/`                                             |
 
 ---
 
@@ -273,6 +318,7 @@ Updated in [`README.md`](README.md#2-challenge-expectations--technical-evidence)
 ### 7. CI Verification
 
 Verified in [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
 - **Secret Scan**: `gitleaks detect --verbose`
 - **Lint & Format**: `pnpm lint`, `pnpm format`
 - **Typecheck**: `pnpm typecheck`
@@ -290,25 +336,26 @@ Verified in [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
 All files in `src/` were audited and split into clean domain/component modules. **Zero non-static data files exceed 400 lines:**
 
-| Prior Monster File | Prior Lines | New Modular Structure | Resulting Max File Lines |
-| :--- | :--- | :--- | :--- |
-| `src/domain/config/in/data.ts` | 976 | Split into `budgetSplits.ts`, `cateringBands.ts`, `milestones.ts`, `checklists.ts`, `conditionals.ts` | `data.ts` (58 lines) |
-| `src/server/ai/chain.ts` | 594 | Split into `chain/types.ts`, `chain/metaBuilder.ts`, `chain/attemptRunner.ts`, `chain.ts` | `chain.ts` (273 lines) |
-| `src/app/plan/budget/page.tsx` | 1049 | Split into `category-table.tsx`, `catering-card.tsx`, `tips-card.tsx`, `what-if-panel.tsx`, `assumptions-dialog.tsx` | `page.tsx` (231 lines) |
-| `src/app/plan/new/page.tsx` | 1253 | Split into `wizard-types.ts`, `step-1-event.tsx`, `step-2-date-city.tsx`, `step-3-guests-budget.tsx`, `step-4-details.tsx`, `step-5-review.tsx` | `page.tsx` (387 lines) |
-| `src/app/plan/vendors/page.tsx` | 709 | Split into `vendors-empty-state.tsx`, `menu-ideas-modal.tsx`, `vendor-checklist-item.tsx` | `page.tsx` (375 lines) |
-| `src/app/plan/timeline/page.tsx` | 704 | Split into `timeline-date-utils.ts`, `timeline-empty-state.tsx`, `timeline-progress-bar.tsx`, `timeline-item.tsx` | `page.tsx` (328 lines) |
-| `src/app/plan/page.tsx` | 613 | Split into `plan-empty-state.tsx`, `plan-stat-blocks.tsx`, `ideas-card.tsx`, `plan-sidebar.tsx` | `page.tsx` (273 lines) |
-| `src/app/plan/ask/page.tsx` | 499 | Split into `chat-types.ts`, `ask-empty-state.tsx`, `chat-message-item.tsx` | `page.tsx` (287 lines) |
-| `src/context/plan-context.tsx` | 449 | Split into `plan-reducer.ts`, `plan-context.tsx` | `plan-context.tsx` (243 lines) |
+| Prior Monster File               | Prior Lines | New Modular Structure                                                                                                                           | Resulting Max File Lines       |
+| :------------------------------- | :---------- | :---------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------- |
+| `src/domain/config/in/data.ts`   | 976         | Split into `budgetSplits.ts`, `cateringBands.ts`, `milestones.ts`, `checklists.ts`, `conditionals.ts`                                           | `data.ts` (58 lines)           |
+| `src/server/ai/chain.ts`         | 594         | Split into `chain/types.ts`, `chain/metaBuilder.ts`, `chain/attemptRunner.ts`, `chain.ts`                                                       | `chain.ts` (273 lines)         |
+| `src/app/plan/budget/page.tsx`   | 1049        | Split into `category-table.tsx`, `catering-card.tsx`, `tips-card.tsx`, `what-if-panel.tsx`, `assumptions-dialog.tsx`                            | `page.tsx` (231 lines)         |
+| `src/app/plan/new/page.tsx`      | 1253        | Split into `wizard-types.ts`, `step-1-event.tsx`, `step-2-date-city.tsx`, `step-3-guests-budget.tsx`, `step-4-details.tsx`, `step-5-review.tsx` | `page.tsx` (387 lines)         |
+| `src/app/plan/vendors/page.tsx`  | 709         | Split into `vendors-empty-state.tsx`, `menu-ideas-modal.tsx`, `vendor-checklist-item.tsx`                                                       | `page.tsx` (375 lines)         |
+| `src/app/plan/timeline/page.tsx` | 704         | Split into `timeline-date-utils.ts`, `timeline-empty-state.tsx`, `timeline-progress-bar.tsx`, `timeline-item.tsx`                               | `page.tsx` (328 lines)         |
+| `src/app/plan/page.tsx`          | 613         | Split into `plan-empty-state.tsx`, `plan-stat-blocks.tsx`, `ideas-card.tsx`, `plan-sidebar.tsx`                                                 | `page.tsx` (273 lines)         |
+| `src/app/plan/ask/page.tsx`      | 499         | Split into `chat-types.ts`, `ask-empty-state.tsx`, `chat-message-item.tsx`                                                                      | `page.tsx` (287 lines)         |
+| `src/context/plan-context.tsx`   | 449         | Split into `plan-reducer.ts`, `plan-context.tsx`                                                                                                | `plan-context.tsx` (243 lines) |
 
-*(Note: `src/domain/config/in/checklists.ts` at 409 lines is pure static data, expressly permitted under the audit guidelines).*
+_(Note: `src/domain/config/in/checklists.ts` at 409 lines is pure static data, expressly permitted under the audit guidelines)._
 
 ---
 
 ### 2. Any Type Purge
 
 Audited and eliminated all TypeScript `: any` and `as any` occurrences across `src/`:
+
 - Replaced `err as any` and `innerPayload: any` in `src/server/ai/gemini.ts` with typed error structures.
 - Replaced `choice?.message as any` in `src/server/ai/jarvis.ts` with `JarvisMessageShape`.
 - Replaced `(data as any)` in `src/server/ai/validators.ts` with typed interfaces.
@@ -319,6 +366,7 @@ Audited and eliminated all TypeScript `: any` and `as any` occurrences across `s
 ### 3. AI Cache LRU Enforced Cap
 
 The in-memory `AICache` in [`src/server/ai/cache.ts`](src/server/ai/cache.ts) enforces a strict 200-entry capacity cap with least-recently-used eviction:
+
 - Unit test in [`tests/unit/server/cache.test.ts`](tests/unit/server/cache.test.ts) fills the cache with 250 unique keys and verifies:
   1. The total entry count never exceeds 200.
   2. The oldest 50 entries are evicted in strict LRU order.
@@ -328,6 +376,7 @@ The in-memory `AICache` in [`src/server/ai/cache.ts`](src/server/ai/cache.ts) en
 ### 4. Code Duplication Audit (`jscpd`)
 
 Installed and executed `jscpd src/`:
+
 ```
 ┌────────────┬────────────────┬─────────────┬──────────────┬──────────────┬──────────────────┬───────────────────┐
 │ Format     │ Files analyzed │ Total lines │ Total tokens │ Clones found │ Duplicated lines │ Duplicated tokens │
@@ -346,6 +395,7 @@ Installed and executed `jscpd src/`:
 └────────────┴────────────────┴─────────────┴──────────────┴──────────────┴──────────────────┴───────────────────┘
 Found 32 clones. Duplication: 3.14%
 ```
+
 - Measured duplication is **3.14%** (well below the 5% threshold).
 - All unsubstantiated "zero duplication" claims have been purged.
 
@@ -369,7 +419,7 @@ Found 32 clones. Duplication: 3.14%
 
 - **Utility**: Created [`src/lib/pii.ts`](src/lib/pii.ts) with `containsPii(text)` and `redactPii(text)` targeting Indian phone numbers (`+91`, 10-digit mobiles) and email addresses.
 - **Client Warning**: In [`src/components/wizard/step-4-details.tsx`](src/components/wizard/step-4-details.tsx), a real-time, non-blocking alert warns the user if their notes contain a phone number or email:
-  > *"Privacy notice: Phone numbers or emails detected in your notes will be automatically redacted before reaching AI assistants."*
+  > _"Privacy notice: Phone numbers or emails detected in your notes will be automatically redacted before reaching AI assistants."_
 - **Server Redaction**: In [`src/server/ai/prompts.ts`](src/server/ai/prompts.ts), `sanitizeUserNotes` automatically executes `redactPii(notes)`, replacing detected phone numbers and emails with `[removed]`.
 - **Unit Tests**: Full verification in [`tests/unit/lib/pii.test.ts`](tests/unit/lib/pii.test.ts) and [`tests/unit/server/prompts.test.ts`](tests/unit/server/prompts.test.ts).
 

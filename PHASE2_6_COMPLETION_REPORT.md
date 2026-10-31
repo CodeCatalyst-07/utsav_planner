@@ -3,13 +3,14 @@
 > **Repository**: [https://github.com/CodeCatalyst-07/utsav_planner.git](https://github.com/CodeCatalyst-07/utsav_planner.git)  
 > **Commit**: `5a4159c` (`main`)  
 > **Live Deployed Vercel URL**: [https://utsavplanner-xi.vercel.app/](https://utsavplanner-xi.vercel.app/)  
-> **Status**: Complete & Verified Green  
+> **Status**: Complete & Verified Green
 
 ---
 
 ## Executive Summary
 
 Phase 2.6 delivers strict honesty, code quality, and security hardening across Utsav Planner without introducing any new features. Key accomplishments include:
+
 1. **Honest Reasoning Baseline**: Live single-session probe measuring default thinking vs. thinking disabled (`{"chat_template_kwargs":{"enable_thinking":false}}`), proving a 2.7x–5.5x latency reduction with 100% first-attempt schema validity.
 2. **Per-Section Reasoning Policy**: Implemented per-section control (`off` for fast sections, `default` for complex menu planning), verified via unit tests.
 3. **Critic Honesty**: Responses omit `criticVerdict` and report `meta.critic = "skipped"` when the critic is disabled.
@@ -25,9 +26,11 @@ Phase 2.6 delivers strict honesty, code quality, and security hardening across U
 ### 1. Reasoning Baseline Explanation & Live Benchmark
 
 #### Provenance of Discrepancy
+
 In Phase 2.5, placeholder estimates (`1.65–2.1s`) were printed in `scripts/probe-llm.ts` (lines 334–364). Live measurements reveal that default reasoning with Jarvis thinking tokens actually requires **3.4s–7.0s**. All mock data has been removed.
 
 #### Live Side-by-Side Probe Measurement
+
 Measured in a single uninterrupted execution session using identical prompts, schemas, and live Jarvis API calls:
 
 ```
@@ -42,13 +45,15 @@ category_tips        Valid / p50 / Max    100% | 4845ms | 5320ms  100% | 1822ms 
 narrate_diff         Valid / p50 / Max    100% | 3293ms | 3810ms  100% |  758ms |  912ms             4.3x faster
 chat_intent (50 runs)Valid / p50 / Max    100% | 3414ms | 8193ms  100% |  622ms |  921ms             5.5x faster
 ```
-*First-attempt validity: 100% across all sections (exceeds the $\ge 95\%$ adoption requirement).*
+
+_First-attempt validity: 100% across all sections (exceeds the $\ge 95\%$ adoption requirement)._
 
 ---
 
 ### 2. Per-Section Reasoning Policy
 
 Implemented in `src/server/ai/sections.ts`:
+
 ```typescript
 export const SECTION_REASONING_POLICY: Record<SectionName, 'off' | 'default'> = {
   ideas: 'off',
@@ -58,7 +63,9 @@ export const SECTION_REASONING_POLICY: Record<SectionName, 'off' | 'default'> = 
   menu: 'default',
 };
 ```
+
 In `src/server/ai/jarvis.ts`, request body merges the section policy with any global `JARVIS_EXTRA_BODY_JSON` override:
+
 ```typescript
 const sectionPolicy = SECTION_REASONING_POLICY[options.section];
 const extraBody = {
@@ -66,6 +73,7 @@ const extraBody = {
   ...this.extraBody,
 };
 ```
+
 Unit test coverage added in `tests/unit/server/providers.test.ts`.
 
 ---
@@ -75,6 +83,7 @@ Unit test coverage added in `tests/unit/server/providers.test.ts`.
 In `src/server/ai/critic.ts` and `src/server/ai/chain/metaBuilder.ts`, when `CRITIC_ENABLED=false`, `meta.critic` is set to `"skipped"` and `criticVerdict` is completely omitted.
 
 #### Raw Meta with `CRITIC_ENABLED=false`
+
 ```json
 {
   "provider": "jarvis",
@@ -87,6 +96,7 @@ In `src/server/ai/critic.ts` and `src/server/ai/chain/metaBuilder.ts`, when `CRI
 ```
 
 #### Raw Meta with `CRITIC_ENABLED=true`
+
 ```json
 {
   "provider": "jarvis",
@@ -107,9 +117,11 @@ In `src/server/ai/critic.ts` and `src/server/ai/chain/metaBuilder.ts`, when `CRI
 ### 4. Gemini Through the Real Production Pipeline & Failover
 
 Called production endpoints with `ALLOW_PROVIDER_OVERRIDE=true` locally:
+
 - **Ideas**: `meta.provider: "gemini"`, `attempts: 2`, `repaired: true` (repaired invalid category labels into canonical IDs), `latencyMs: 4579`.
 - **Category Tips**: `meta.provider: "gemini"`, `attempts: 1`, `repaired: false`, all 9 canonical categories schema-valid.
 - **Failover Demonstration**:
+
 ```json
 {
   "provider": "gemini",
@@ -121,6 +133,7 @@ Called production endpoints with `ALLOW_PROVIDER_OVERRIDE=true` locally:
   "latencyMs": 3525
 }
 ```
+
 Attempt 1 (Jarvis with bad key) failed with `errorKind: "auth"`; `FailoverChain` switched to Gemini on Attempt 2 and succeeded. Exactly 4 Gemini requests were used in total, preserving the 20 requests/day free tier quota.
 
 ---
@@ -128,6 +141,7 @@ Attempt 1 (Jarvis with bad key) failed with `errorKind: "auth"`; `FailoverChain`
 ### 5. Accuracy Sweep
 
 Audited and aligned all documentation with the actual code:
+
 - **Design Tokens**: Primary `#7A1F3D` (10.04:1 contrast on white), Accent `#F59E0B`, Background `#FFF8F0`. Corrected previous false claims of `#D4AF37` and 9.45:1 contrast.
 - **Wizard & UI Structure**: Documented 5-step wizard (Event, Date & City, Guests & Budget, Details & Priorities, Review & Generate) and steppers + numeric inputs (removed inaccurate mentions of sliders and non-existent vendor filter combobox).
 - Updated `README.md`, `SECURITY.md`, `docs/accessibility.md`, and `docs/deployment.md`.
@@ -137,6 +151,7 @@ Audited and aligned all documentation with the actual code:
 ### 6. Real Challenge Expectations
 
 Redone in `README.md` Section 2 with verifiable evidence, code links, and no self-assigned scores:
+
 1. **Smart Dynamic Assistant**: Context-aware chat intent classification and patch application (`src/domain/schemas/intents.ts`, `tests/unit/domain/intents.test.ts`).
 2. **Logical Decision Making Based on Context**: Culturally tuned budget splits, guest multiplier bands, and checklist milestones across 12 Indian cities (`src/domain/rules/`, `tests/unit/domain/`).
 3. **Adaptive Behavior to Unexpected Changes**: Real-time What-If scenario simulations with atomic diff narration (`src/domain/rules/what-if.ts`, `tests/unit/rules/what-if-diff.test.ts`).
@@ -148,17 +163,18 @@ Redone in `README.md` Section 2 with verifiable evidence, code links, and no sel
 ### 7. CI Verification
 
 Verified `.github/workflows/ci.yml` runs the complete verification suite:
+
 ```yaml
-      - name: Unit Tests
-        run: pnpm test
-      - name: AI Eval Suite
-        run: pnpm eval
-      - name: Security Audit
-        run: pnpm audit --prod
-      - name: Gitleaks Secret Detection
-        uses: gitleaks/gitleaks-action@v2
-      - name: Playwright E2E Suite (including Console/CSP)
-        run: pnpm exec playwright test --workers=1
+- name: Unit Tests
+  run: pnpm test
+- name: AI Eval Suite
+  run: pnpm eval
+- name: Security Audit
+  run: pnpm audit --prod
+- name: Gitleaks Secret Detection
+  uses: gitleaks/gitleaks-action@v2
+- name: Playwright E2E Suite (including Console/CSP)
+  run: pnpm exec playwright test --workers=1
 ```
 
 ---
@@ -182,6 +198,7 @@ All files in `src/` now strictly conform to the `< 400` line threshold (excludin
 ```
 
 New modular components created:
+
 - `src/components/wizard/`: `step-1-event.tsx`, `step-2-date-city.tsx`, `step-3-guests-budget.tsx`, `step-4-details.tsx`, `step-5-review.tsx`, `wizard-types.ts`
 - `src/components/budget/`: `category-table.tsx`, `catering-card.tsx`, `tips-card.tsx`, `what-if-panel.tsx`, `assumptions-dialog.tsx`, `category-colors.ts`
 - `src/components/vendors/`: `vendors-empty-state.tsx`, `menu-ideas-modal.tsx`, `vendor-checklist-item.tsx`
@@ -211,6 +228,7 @@ All dynamic types narrowed to specific interfaces or `unknown` with runtime type
 ### 3. AI Cache LRU Cap (200 Entries)
 
 Implemented in `src/server/ai/chain/attemptRunner.ts`:
+
 - Enforces `MAX_CACHE_ENTRIES = 200`.
 - Automatically evicts oldest keys when cache size exceeds limit.
 - Verified by unit tests in `tests/unit/server/cache.test.ts`.
@@ -226,6 +244,7 @@ Total lines of code:        16474
 Duplicated lines:           518 (3.14%)
 Duplication rate:           3.14% (Threshold: <= 5.0%)
 ```
+
 The codebase contains only 3.14% duplication across 16,474 lines of code, well beneath the 5% upper limit.
 
 ---
@@ -250,14 +269,14 @@ The codebase contains only 3.14% duplication across 16,474 lines of code, well b
 
 ## Part D: Comprehensive Test & Build Verification
 
-| Test Suite | Result | Details |
-| :--- | :--- | :--- |
-| **Vitest Unit Suite** | **PASS** (412 / 412) | 41 test files green in 4.43s |
-| **AI Eval Suite** | **PASS** (58 / 58) | Contract & poison tests green in 3.12s |
-| **Playwright E2E Suite** | **PASS** (78 / 78) | Includes 14/14 Console/CSP tests green |
-| **Next.js Production Build** | **PASS** | Standalone production bundle verified |
-| **Smoke API Verification** | **PASS** (5 / 5) | `pnpm smoke:api --expect-ai` all returning `jarvis` |
-| **Git Push to GitHub** | **SYNCED** | Commit `5a4159c` pushed to `origin/main` |
+| Test Suite                   | Result               | Details                                             |
+| :--------------------------- | :------------------- | :-------------------------------------------------- |
+| **Vitest Unit Suite**        | **PASS** (412 / 412) | 41 test files green in 4.43s                        |
+| **AI Eval Suite**            | **PASS** (58 / 58)   | Contract & poison tests green in 3.12s              |
+| **Playwright E2E Suite**     | **PASS** (78 / 78)   | Includes 14/14 Console/CSP tests green              |
+| **Next.js Production Build** | **PASS**             | Standalone production bundle verified               |
+| **Smoke API Verification**   | **PASS** (5 / 5)     | `pnpm smoke:api --expect-ai` all returning `jarvis` |
+| **Git Push to GitHub**       | **SYNCED**           | Commit `5a4159c` pushed to `origin/main`            |
 
 ---
 
