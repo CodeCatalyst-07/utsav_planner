@@ -41,7 +41,7 @@ Utsav Planner is designed to WCAG 2.1 Level AA and AAA standards, ensuring full 
 
 - **System Theme Adaptation**: Evaluated under Windows High Contrast Mode / CSS `forced-colors: active`.
 - **Focus Rings**: Strict 2px solid `Highlight` or `CanvasText` outlines are preserved on all interactive elements.
-- **Status Chips**: Status indicators ([status-chip.tsx](file:///Users/arnav/Desktop/event_planner/src/components/ui/status-chip.tsx)) adapt borders and text to system colors (`Canvas`, `CanvasText`, `HighlightText`), maintaining distinct visual states without relying purely on color fills.
+- **Status Chips**: Status indicators ([status-chip.tsx](../src/components/ui/status-chip.tsx)) adapt borders and text to system colors (`Canvas`, `CanvasText`, `HighlightText`), maintaining distinct visual states without relying purely on color fills.
 - **Screenshots**: Visual inspection captures are stored in `docs/screenshots/forced-colors/`:
   - `start-forced-colors.png`
   - `wizard-forced-colors.png`
