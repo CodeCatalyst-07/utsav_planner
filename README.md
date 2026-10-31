@@ -40,40 +40,40 @@
 
 ```mermaid
 flowchart TD
-    User([User in Browser]) --> ClientContext[Plan Context & LocalStorage]
+    User(["User in Browser"]) --> ClientContext["Plan Context & LocalStorage"]
 
-    subgraph ClientLayer [Client-Side Layer - Zero Network Latency]
-        ClientContext --> PureRules[Deterministic Engine: budget.ts, timeline.ts, replan.ts]
-        PureRules --> LiveView[Reactive Budget, What-If Sandbox & Checklist]
+    subgraph ClientLayer ["Client-Side Layer - Zero Network Latency"]
+        ClientContext --> PureRules["Deterministic Engine: budget.ts, timeline.ts, replan.ts"]
+        PureRules --> LiveView["Reactive Budget, What-If Sandbox & Checklist"]
     end
 
-    subgraph ServerAPILayer [Next.js 15 Serverless API Layer]
-        ClientContext -->|Qualitative Requests Only| RouteHandlers[/api/ai/section, /api/ai/chat]
-        RouteHandlers --> RateLimiter[In-Memory Token Bucket Limiter]
-        RateLimiter --> CacheCheck{AICache Hit?}
-        CacheCheck -- Yes --> CachedResponse[Return Cached JSON]
-        CacheCheck -- No --> FailoverChain[Failover Chain Engine]
+    subgraph ServerAPILayer ["Next.js 15 Serverless API Layer"]
+        ClientContext -->|Qualitative Requests Only| RouteHandlers["Route Handlers: /api/ai/section, /api/ai/chat"]
+        RouteHandlers --> RateLimiter["In-Memory Token Bucket Limiter"]
+        RateLimiter --> CacheCheck{"AICache Hit?"}
+        CacheCheck -- Yes --> CachedResponse["Return Cached JSON"]
+        CacheCheck -- No --> FailoverChain["Failover Chain Engine"]
 
-        subgraph AIChain [AI Failover & Quality Pipeline]
-            FailoverChain --> Jarvis[Primary: JarvisLabs Gemma-4-31B]
-            Jarvis -- 429 / 5xx / Timeout --> Gemini[Failover: Google Gemini 2.5 Flash]
-            Gemini -- Outage / Quota Exceeded --> Fallback[Deterministic Template Fallback]
+        subgraph AIChain ["AI Failover & Quality Pipeline"]
+            FailoverChain --> Jarvis["Primary: JarvisLabs Gemma-4-31B"]
+            Jarvis -- 429 / 5xx / Timeout --> Gemini["Failover: Google Gemini 2.5 Flash"]
+            Gemini -- Outage / Quota Exceeded --> Fallback["Deterministic Template Fallback"]
 
-            Jarvis --> OutputValidator{Numeric Guard & Schema Validator}
+            Jarvis --> OutputValidator{"Numeric Guard & Schema Validator"}
             Gemini --> OutputValidator
-            OutputValidator -- Bad Schema --> RepairLoop[Single Prompt Repair]
+            OutputValidator -- Bad Schema --> RepairLoop["Single Prompt Repair"]
             RepairLoop -- Failed Again --> Gemini
-            OutputValidator -- Valid JSON --> OptionalCritic{Critic Enabled?}
-            OptionalCritic -- Yes --> GeminiCritic[Gemini Cultural & Quality Critic]
-            OptionalCritic -- No --> CacheStore[Store in AICache & Return]
+            OutputValidator -- Valid JSON --> OptionalCritic{"Critic Enabled?"}
+            OptionalCritic -- Yes --> GeminiCritic["Gemini Cultural & Quality Critic"]
+            OptionalCritic -- No --> CacheStore["Store in AICache & Return"]
             GeminiCritic --> CacheStore
         end
     end
 
-    subgraph GoogleServices [Google Services Integration]
-        ClientContext --> GCal[Google Calendar Web Links & .ics Download]
-        ClientContext --> GMaps[Google Maps Search URLs - Zero Cost]
-        RouteHandlers --> GPlaces[Google Places API (New) Text Search]
+    subgraph GoogleServices ["Google Services Integration"]
+        ClientContext --> GCal["Google Calendar Web Links & .ics Download"]
+        ClientContext --> GMaps["Google Maps Search URLs - Zero Cost"]
+        RouteHandlers --> GPlaces["Google Places API (New) Text Search"]
     end
 ```
 
