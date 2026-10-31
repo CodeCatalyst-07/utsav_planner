@@ -24,7 +24,7 @@ graph TD
     subgraph Browser ["Client Layer (Browser)"]
         UI["Accessible Shell UI (Next.js App Router)"]
         Nav["Route Navigation (/plan, /plan/budget, etc.)"]
-        Axe["Accessibility Engine (WCAG AAA/AA)"]
+        Axe["Accessibility Engine (WCAG 2.1 AA targeted)"]
     end
 
     subgraph API ["Execution & Security Boundary (Vercel Route Handlers)"]
@@ -134,7 +134,7 @@ flowchart TD
     ValidateJarvis -- Invalid (Attempt 2) / Error --> OpenJarvis["Record Failure<br/>(Breaker trips at 3)"]
     OpenJarvis --> GeminiCheck
 
-    GeminiCheck -- Yes --> CallGemini["Call Google Gemini<br/>(@google/genai SDK, gemini-2.5-flash)"]
+    GeminiCheck -- Yes --> CallGemini["Call Google Gemini<br/>(@google/genai SDK, GEMINI_MODEL)"]
     GeminiCheck -- No --> Fallback["Deterministic Fallback<br/>(fallbacks.ts - Valid by Construction)"]
 
     CallGemini --> ValidateGemini{"Valid JSON &<br/>Numeric Guard Passed?"}
@@ -187,8 +187,8 @@ sequenceDiagram
     ClientEngine-->>UI: Render Diff Preview (Delta, Catering adjustment, Milestones)
 
     Note over User,UI: Explicit User Confirmation (ADR-011)
-    alt User Clicks "Apply Changes"
-        User->>UI: Click "Apply Changes"
+    alt User Clicks "Apply change"
+        User->>UI: Click "Apply change"
         UI->>ClientEngine: dispatch({ type: "APPLY_PATCH", patch })
         ClientEngine-->>UI: State updated & synced to LocalStorage
     else User Clicks "Dismiss"
@@ -200,7 +200,7 @@ sequenceDiagram
 ### Safety Guarantees for Chat Flow
 
 1. **No Autonomous State Mutation**: The LLM _cannot_ directly modify the plan state or database. It can only propose structured patches matching `PlanPatchSchema`.
-2. **Explicit User Confirmation (ADR-011)**: Every proposed plan change requires an explicit user click on the "Apply Changes" button.
+2. **Explicit User Confirmation (ADR-011)**: Every proposed plan change requires an explicit user click on the "Apply change" button.
 3. **Passive Context Sandbox**: Free-text notes and conversational messages are wrapped in `<user_notes>` tags. System instructions strictly instruct the model to treat user text as passive context rather than administrative commands.
 4. **Numeric Guard**: Chat replies cannot invent unverified numbers or commercial guarantees.
 
