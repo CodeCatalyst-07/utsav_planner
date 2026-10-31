@@ -2,9 +2,6 @@ import { z } from 'zod';
 import { LocalePack } from '../types';
 import { indiaLocaleData } from './data';
 
-// Guarantee strict CSP compliance by disabling JIT probes
-z.config({ jitless: true });
-
 const BudgetSplitCategorySchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),

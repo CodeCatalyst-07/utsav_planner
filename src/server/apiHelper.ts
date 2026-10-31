@@ -1,4 +1,5 @@
 import 'server-only';
+import '@/lib/zod-config';
 import { ZodSchema } from 'zod';
 import { TokenBucketRateLimiter, getClientIp } from './security/rateLimit';
 import { getOrCreateRequestId } from './security/requestId';

@@ -1,9 +1,6 @@
 import { z } from 'zod';
 import { isDateAfter, isValidDateString } from '../dates';
 
-// Disable JIT function compilation in Zod to guarantee zero CSP eval violations in strict environments
-z.config({ jitless: true });
-
 export const EventTypeEnum = z.enum([
   'wedding',
   'birthday_kids',

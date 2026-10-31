@@ -31,22 +31,22 @@ Utsav Planner deploys as a **single unified Next.js 15 project** on Vercel. It r
 
 In the Vercel Project Settings under **Environment Variables**, configure the production values:
 
-| Variable                  | Type    | Required | Recommended Production Value                         | Description                                                                            |
-| :------------------------ | :------ | :------- | :--------------------------------------------------- | :------------------------------------------------------------------------------------- |
-| `JARVISLABS_API_KEY`      | Secret  | Optional | `your_jarvis_key`                                    | Primary LLM provider key for Gemma-4-31B.                                              |
-| `JARVIS_BASE_URL`         | String  | Optional | `https://models.jarvislabs.net/v1`                   | JarvisLabs OpenAI-compatible endpoint.                                                 |
-| `JARVIS_MODEL`            | String  | Optional | `gemma-4-31b-it`                                     | Primary fast reasoning/instruction model.                                              |
-| `JARVIS_JSON_MODE`        | String  | Optional | `prompt_only`                                        | Prompts enforce balanced JSON without server-side grammar constraints.                 |
-| `JARVIS_EXTRA_BODY_JSON`  | JSON    | Optional | `{"chat_template_kwargs":{"enable_thinking":false}}` | Disables Gemma thinking tokens for 4x faster response times.                           |
-| `GEMINI_API_KEY`          | Secret  | Optional | `your_gemini_key`                                    | Secondary failover LLM key.                                                            |
-| `GEMINI_MODEL`            | String  | Optional | `gemini-2.5-flash`                                   | Gemini model ID.                                                                       |
-| `CRITIC_ENABLED`          | Boolean | Optional | `false`                                              | Defaults to `false`. Enable once paid / verified free-tier quota is confirmed.         |
-| `GROUNDING_ENABLED`       | Boolean | Optional | `false`                                              | Optional Google Search grounding for Gemini.                                           |
-| `GOOGLE_PLACES_API_KEY`   | Secret  | Optional | `your_places_key`                                    | Optional Google Places API (New) key for real vendor search.                           |
-| `VENDOR_SOURCE`           | String  | Optional | `sample`                                             | Defaults to zero-cost fictional curated listings. Set to `places` when key is present. |
-| `ALLOW_PROVIDER_OVERRIDE` | Boolean | Optional | `false`                                              | Security guard: prevents external users from bypassing provider chain via headers.     |
-| `RATE_LIMIT_PER_MIN`      | Number  | Optional | `10`                                                 | In-memory token bucket rate limit per client IP for AI routes.                         |
-| `AI_TOTAL_DEADLINE_MS`    | Number  | Optional | `15000`                                              | Hard 15-second end-to-end deadline before Vercel gateway timeout.                      |
+| Variable                  | Type    | Required | Recommended Production Value       | Description                                                                                          |
+| :------------------------ | :------ | :------- | :--------------------------------- | :--------------------------------------------------------------------------------------------------- |
+| `JARVISLABS_API_KEY`      | Secret  | Optional | `your_jarvis_key`                  | Primary LLM provider key for Gemma-4-31B.                                                            |
+| `JARVIS_BASE_URL`         | String  | Optional | `https://models.jarvislabs.net/v1` | JarvisLabs OpenAI-compatible endpoint.                                                               |
+| `JARVIS_MODEL`            | String  | Optional | `gemma-4-31b-it`                   | Primary fast reasoning/instruction model.                                                            |
+| `JARVIS_JSON_MODE`        | String  | Optional | `prompt_only`                      | Prompts enforce balanced JSON without server-side grammar constraints.                               |
+| `JARVIS_EXTRA_BODY_JSON`  | JSON    | Optional | `{}`                               | Recommended `{}`. Leaving thinking enabled preserves 100% menu validity (disabling drops it to 80%). |
+| `GEMINI_API_KEY`          | Secret  | Optional | `your_gemini_key`                  | Optional failover LLM key. Free tier allows 20 req/day. Jarvis is primary, Gemini is failover.       |
+| `GEMINI_MODEL`            | String  | Optional | `gemini-2.5-flash`                 | Gemini model ID.                                                                                     |
+| `CRITIC_ENABLED`          | Boolean | Optional | `false`                            | Defaults to `false` to conserve Gemini daily quota. Enable once quota is confirmed.                  |
+| `GROUNDING_ENABLED`       | Boolean | Optional | `false`                            | Optional Google Search grounding for Gemini.                                                         |
+| `GOOGLE_PLACES_API_KEY`   | Secret  | Optional | `your_places_key`                  | Optional Google Places API (New) key for real vendor search.                                         |
+| `VENDOR_SOURCE`           | String  | Optional | `sample`                           | Defaults to zero-cost fictional curated listings. Set to `places` when key is present.               |
+| `ALLOW_PROVIDER_OVERRIDE` | Boolean | Optional | `false`                            | Security guard: prevents external users from bypassing provider chain via headers.                   |
+| `RATE_LIMIT_PER_MIN`      | Number  | Optional | `10`                               | In-memory token bucket rate limit per client IP for AI routes.                                       |
+| `AI_TOTAL_DEADLINE_MS`    | Number  | Optional | `15000`                            | Hard 15-second end-to-end deadline before Vercel gateway timeout.                                    |
 
 ### 3. Deploy
 

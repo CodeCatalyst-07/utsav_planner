@@ -7,6 +7,7 @@ import {
   NarrateDiffSectionSchema,
   ChatIntentSectionSchema,
 } from '../src/server/ai/sections';
+import { EventProfilePatchSchema } from '../src/domain/schemas/patch';
 import { validateOutput } from '../src/server/ai/validators';
 import { DeterministicFallback } from '../src/server/ai/fallback';
 import { getConfiguredProviders, getEnv } from '../src/server/env';
@@ -69,6 +70,12 @@ async function runEvals() {
   // PART 1: POSITIVE CASES (12 Scenarios)
   // --------------------------------------------------------------------------
   console.log('--- PART 1: POSITIVE EVALUATIONS (12 Culturally Neutral Scenarios) ---');
+  console.log(
+    '  Fixture Provenance: Recorded real-pipeline fixtures & DeterministicFallback templates'
+  );
+  console.log(
+    '  derived from Indian cultural configurations (Pune wedding, Indore kids birthday, Mumbai community Ganesh, etc.).\n'
+  );
 
   const chain = new FailoverChain();
 
@@ -187,10 +194,10 @@ async function runEvals() {
     console.log(
       ` ${statusIcon} [${scenario.id}] ${scenario.name} (${checks.filter((c) => c.ok).length}/${checks.length} passed)`
     );
-    if (!scenarioPassed) {
-      checks
-        .filter((c) => !c.ok)
-        .forEach((c) => console.log(`     FAILED: ${c.name} -> ${c.message}`));
+    for (const c of checks) {
+      console.log(
+        `     ${c.ok ? '✓' : '✗'} [Check] ${c.name}${!c.ok && c.message ? `: ${c.message}` : ''}`
+      );
     }
   }
 
@@ -294,22 +301,53 @@ async function runEvals() {
     rejectionReason: poison4Result.error,
   });
 
-  // Poison 5: Chat Patch Schema & Budget Bounds Violation
-  const poisonedChatPatch = {
-    intentType: 'modify_budget',
-    actionSummary: 'Overflow budget',
-    confidence: 'high',
-    patch: {
-      totalBudgetInr: 999_000_000_000, // Exceeds ₹50 Cr upper bound
-      guestCount: -50, // Negative guest count
-    },
-  };
-  const poison5Result = ChatIntentSectionSchema.safeParse(poisonedChatPatch);
-  const poison5Blocked = !poison5Result.success;
+  // Poison 5: Domain Bounds Violations for Chat Patch
+  // 5a. guestCount 999999 (exceeds max 5,000)
+  const poison5aResult = EventProfilePatchSchema.safeParse({ guestCount: 999999 });
   negativeChecks.push({
-    name: 'Poison 5: Adversarial Negative / Out-of-Bounds Chat Patch Rejected',
-    ok: poison5Blocked,
-    rejectionReason: poison5Result.error?.issues
+    name: 'Poison 5a: Patch guestCount 999999 (> 5,000 bound) Rejected',
+    ok: !poison5aResult.success,
+    rejectionReason: poison5aResult.error?.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('; '),
+  });
+
+  // 5b. negative budget
+  const poison5bResult = EventProfilePatchSchema.safeParse({ totalBudgetInr: -50000 });
+  negativeChecks.push({
+    name: 'Poison 5b: Patch negative budget (-₹50,000) Rejected',
+    ok: !poison5bResult.success,
+    rejectionReason: poison5bResult.error?.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('; '),
+  });
+
+  // 5c. invalid date
+  const poison5cResult = EventProfilePatchSchema.safeParse({ eventDate: 'invalid-date-string' });
+  negativeChecks.push({
+    name: 'Poison 5c: Patch invalid date format Rejected',
+    ok: !poison5cResult.success,
+    rejectionReason: poison5cResult.error?.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('; '),
+  });
+
+  // 5d. unknown key isAdmin (strict schema rejection)
+  const poison5dResult = EventProfilePatchSchema.safeParse({ isAdmin: true, guestCount: 200 });
+  negativeChecks.push({
+    name: 'Poison 5d: Patch unknown key "isAdmin" Rejected by Strict Schema',
+    ok: !poison5dResult.success,
+    rejectionReason: poison5dResult.error?.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('; '),
+  });
+
+  // 5e. wrong type (string instead of integer)
+  const poison5eResult = EventProfilePatchSchema.safeParse({ guestCount: 'two hundred' });
+  negativeChecks.push({
+    name: 'Poison 5e: Patch wrong type (string guestCount) Rejected',
+    ok: !poison5eResult.success,
+    rejectionReason: poison5eResult.error?.issues
       .map((i) => `${i.path.join('.')}: ${i.message}`)
       .join('; '),
   });

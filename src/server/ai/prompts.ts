@@ -202,11 +202,32 @@ Return a JSON object:
   "reply": string (max 300 characters, concise and courteous reply)
 }
 
-FEW-SHOT EXAMPLE:
+STRICT RULES FOR 'reply':
+- State ONLY the direct action taken and the delta or parameter mentioned by the user (e.g. 'Noted, shifting ₹1,00,000 from decor to photography.').
+- DO NOT invent, calculate, or cite resulting category totals or final balances in 'reply' because the deterministic engine recomputes all allocations.
+
+FEW-SHOT EXAMPLES:
+Example 1 (Parameter update):
+User: "Change guest count to 250"
 {
   "intent": "update_plan",
   "patch": { "guestCount": 250 },
-  "reply": "I have adjusted your guest count to 250. The engine is recomputing your budget and vendor allocations now."
+  "reply": "I have updated your guest count to 250. The engine is recalculating your budget and vendor requirements."
+}
+
+Example 2 (Budget shift):
+User: "Shift 1 lakh from decor to photography"
+{
+  "intent": "update_plan",
+  "patch": {},
+  "reply": "Noted, shifting ₹1,00,000 from decor to photography."
+}
+
+Example 3 (Planning question):
+User: "What should guests wear for an evening Sangeet?"
+{
+  "intent": "question",
+  "reply": "For an evening Sangeet in Pune, festive Indo-western or traditional attire such as kurta-pajamas with Nehru jackets and vibrant lehengas or anarkalis are ideal."
 }`;
 
   return { system: BASE_SYSTEM_PROMPT, user };

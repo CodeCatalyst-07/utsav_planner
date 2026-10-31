@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateProfile, sanitizeNotes } from '@/domain/schemas/profile';
+import { EventProfilePatchSchema } from '@/domain/schemas/patch';
 
 describe('Event Profile Validation (src/domain/schemas/profile.ts)', () => {
   const TODAY = '2026-10-29';
@@ -148,5 +149,21 @@ describe('Event Profile Validation (src/domain/schemas/profile.ts)', () => {
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThan(0);
     }
+  });
+
+  describe('EventProfilePatchSchema (src/domain/schemas/patch.ts)', () => {
+    it('accepts valid partial patches', () => {
+      expect(EventProfilePatchSchema.safeParse({ guestCount: 250 }).success).toBe(true);
+      expect(EventProfilePatchSchema.safeParse({ totalBudgetInr: 4500000 }).success).toBe(true);
+      expect(EventProfilePatchSchema.safeParse({ eventDate: '2027-02-15' }).success).toBe(true);
+    });
+
+    it('rejects out of bounds and invalid patch fields', () => {
+      expect(EventProfilePatchSchema.safeParse({ guestCount: 999999 }).success).toBe(false);
+      expect(EventProfilePatchSchema.safeParse({ totalBudgetInr: -50000 }).success).toBe(false);
+      expect(EventProfilePatchSchema.safeParse({ eventDate: 'not-a-date' }).success).toBe(false);
+      expect(EventProfilePatchSchema.safeParse({ isAdmin: true }).success).toBe(false);
+      expect(EventProfilePatchSchema.safeParse({ guestCount: 'two hundred' }).success).toBe(false);
+    });
   });
 });

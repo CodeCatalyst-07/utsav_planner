@@ -11,10 +11,45 @@ export interface GeminiProviderOptions {
   client?: GoogleGenAI;
 }
 
+export function parseGoDuration(str: string): number | null {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim().toLowerCase();
+
+  // If pure numeric string (in seconds)
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    return Math.round(parseFloat(trimmed));
+  }
+
+  // Handle single unit ms: e.g. "250ms"
+  if (/^\d+(?:\.\d+)?ms$/.test(trimmed)) {
+    const ms = parseFloat(trimmed);
+    return Math.max(1, Math.round(ms / 1000));
+  }
+
+  // Parse composite Go duration: e.g. "14h27m10.105s", "52030s", "15m", "300s"
+  const regex =
+    /(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?/;
+  const match = trimmed.match(regex);
+  if (!match || match[0] === '') return null;
+
+  const hours = match[1] ? parseFloat(match[1]) : 0;
+  const minutes = match[2] ? parseFloat(match[2]) : 0;
+  const seconds = match[3] ? parseFloat(match[3]) : 0;
+  const ms = match[4] ? parseFloat(match[4]) : 0;
+
+  const totalSeconds = hours * 3600 + minutes * 60 + seconds + ms / 1000;
+  return totalSeconds > 0
+    ? totalSeconds < 1
+      ? Math.ceil(totalSeconds)
+      : Math.round(totalSeconds)
+    : null;
+}
+
 export function parseGemini429Details(err: unknown): {
   retryAfterSeconds?: number;
   isDailyQuota: boolean;
   quotaMetric?: string;
+  rawParsedSeconds?: number;
 } {
   let retryAfterSeconds: number | undefined;
   let isDailyQuota = false;
@@ -23,11 +58,23 @@ export function parseGemini429Details(err: unknown): {
   const errorObj = err as any;
   const msg = (errorObj?.message || '').toString();
 
-  if (/per\s*day|daily|perDay|day_limit|freetierperday/i.test(msg)) {
+  // Check if error message is stringified JSON
+  let innerPayload: any = null;
+  try {
+    if (typeof msg === 'string' && msg.trim().startsWith('{')) {
+      innerPayload = JSON.parse(msg.trim());
+    }
+  } catch {
+    // not JSON
+  }
+
+  const combinedText = `${msg} ${JSON.stringify(innerPayload || '')}`;
+
+  if (/per\s*day|daily|perDay|day_limit|freetierperday/i.test(combinedText)) {
     isDailyQuota = true;
   }
 
-  const metricMatch = msg.match(/(?:quota[-_ ]?metric|metric)['":\s]+([a-zA-Z0-9_./-]+)/i);
+  const metricMatch = combinedText.match(/(?:quota[-_ ]?metric|metric)['":\s]+([a-zA-Z0-9_./-]+)/i);
   if (metricMatch) {
     quotaMetric = metricMatch[1];
     if (quotaMetric && /day/i.test(quotaMetric)) {
@@ -35,36 +82,40 @@ export function parseGemini429Details(err: unknown): {
     }
   }
 
-  const details = errorObj?.errorDetails || errorObj?.details || [];
+  const details =
+    errorObj?.errorDetails ||
+    errorObj?.details ||
+    innerPayload?.error?.details ||
+    innerPayload?.details ||
+    [];
+
   if (Array.isArray(details)) {
     for (const d of details) {
       if (d?.['@type']?.includes('RetryInfo') && d.retryDelay) {
-        const secMatch = String(d.retryDelay).match(/^(\d+)(?:\.\d+)?s?$/);
-        if (secMatch && secMatch[1]) retryAfterSeconds = parseInt(secMatch[1], 10);
+        const parsedSec = parseGoDuration(String(d.retryDelay));
+        if (parsedSec !== null) retryAfterSeconds = parsedSec;
       }
       if (d?.['@type']?.includes('QuotaFailure')) {
         const desc = JSON.stringify(d.violations || '');
         if (/day/i.test(desc)) isDailyQuota = true;
+        if (!quotaMetric && Array.isArray(d.violations) && d.violations[0]?.quotaMetric) {
+          quotaMetric = d.violations[0].quotaMetric;
+        }
       }
     }
   }
 
-  if (!retryAfterSeconds) {
-    const delayMatch = msg.match(
-      /(?:retryDelay|retry-after|retry after|retry in)\D*(\d+)\s*(s|sec|seconds|m|min)?/i
+  if (retryAfterSeconds === undefined) {
+    const delayMatch = combinedText.match(
+      /(?:retry in|retry after|retryDelay[:\s=]+)\s*([0-9hms.]+)/i
     );
-    if (delayMatch) {
-      const val = parseInt(delayMatch[1], 10);
-      const unit = delayMatch[2]?.toLowerCase();
-      if (unit && unit.startsWith('m')) {
-        retryAfterSeconds = val * 60;
-      } else {
-        retryAfterSeconds = val;
-      }
+    if (delayMatch && delayMatch[1]) {
+      const parsedSec = parseGoDuration(delayMatch[1]);
+      if (parsedSec !== null) retryAfterSeconds = parsedSec;
     }
   }
 
-  if (!retryAfterSeconds && errorObj?.response?.headers) {
+  if (retryAfterSeconds === undefined && errorObj?.response?.headers) {
     const headerVal =
       typeof errorObj.response.headers.get === 'function'
         ? errorObj.response.headers.get('retry-after')
@@ -79,7 +130,20 @@ export function parseGemini429Details(err: unknown): {
     isDailyQuota = true;
   }
 
-  return { retryAfterSeconds, isDailyQuota, quotaMetric };
+  const rawParsedSeconds = retryAfterSeconds;
+
+  // Apply caps: 5 min (300s) for per-minute rate limits, 30 min (1800s) for daily quota
+  if (retryAfterSeconds !== undefined) {
+    const maxCap = isDailyQuota ? 30 * 60 : 5 * 60;
+    retryAfterSeconds = Math.min(retryAfterSeconds, maxCap);
+  }
+
+  return {
+    retryAfterSeconds,
+    isDailyQuota,
+    quotaMetric,
+    rawParsedSeconds,
+  };
 }
 
 export class GeminiProvider implements LLMProvider {

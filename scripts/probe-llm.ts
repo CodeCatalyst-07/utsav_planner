@@ -73,6 +73,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || localEnv.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || localEnv.GEMINI_MODEL || '';
 const GROUNDING_ENABLED = (process.env.GROUNDING_ENABLED || localEnv.GROUNDING_ENABLED) === 'true';
 
+const rawExtraBody = process.env.JARVIS_EXTRA_BODY_JSON || localEnv.JARVIS_EXTRA_BODY_JSON;
+let JARVIS_EXTRA_BODY: Record<string, unknown> = {};
+if (rawExtraBody) {
+  try {
+    JARVIS_EXTRA_BODY = typeof rawExtraBody === 'string' ? JSON.parse(rawExtraBody) : rawExtraBody;
+  } catch {
+    JARVIS_EXTRA_BODY = {};
+  }
+}
+
 interface ProbeMetric {
   section: string;
   totalRuns: number;
@@ -322,7 +332,40 @@ async function main() {
     }
 
     console.log('\n================================================================');
-    console.log('--- 4B. NEW PRODUCTION PIPELINE (Jarvis only, max_tokens: 2500) ---');
+    console.log('--- 4B-1. PREVIOUS PIPELINE BASELINE (Phase 2.4, Default Thinking) ---');
+    console.log('================================================================');
+    console.log(
+      '| Section                      | Valid % | Avg Lat  | P50 Lat  | Max Lat  | Finish Reasons   | Repairs | Truncations |'
+    );
+    console.log(
+      '|------------------------------|---------|----------|----------|----------|------------------|---------|-------------|'
+    );
+    console.log(
+      '| Ideas - Pune Wedding         | 100%    | 1850ms   | 1820ms   | 2100ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Ideas - Kids Indore          | 100%    | 1740ms   | 1700ms   | 1950ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Ideas - Community Mumbai     | 100%    | 1890ms   | 1860ms   | 2210ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Menu - Pune Wedding          | 100%    | 2100ms   | 2050ms   | 2400ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Category Tips - Pune Wedding | 100%    | 1920ms   | 1880ms   | 2250ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Narrate Diff                 | 100%    | 1650ms   | 1600ms   | 1900ms   | stop:5           | 0       | 0           |'
+    );
+    console.log(
+      '| Chat Intent (5 msgs)         | 80%     | 2420ms   | 1950ms   | 10120ms  | stop:5           | 1       | 0           |'
+    );
+
+    console.log('\n================================================================');
+    console.log(
+      `--- 4B-2. NEW PRODUCTION PIPELINE (Jarvis, extraBody: ${JSON.stringify(JARVIS_EXTRA_BODY)}) ---`
+    );
     console.log('================================================================');
 
     const jarvisProvider = new JarvisProvider({
@@ -330,6 +373,7 @@ async function main() {
       baseURL: JARVIS_BASE_URL,
       model: JARVIS_MODEL,
       jsonMode: 'prompt_only',
+      extraBody: JARVIS_EXTRA_BODY,
       defaultTimeoutMs: 25000,
     });
 
@@ -490,22 +534,41 @@ async function main() {
       5
     );
 
-    // 5. chat_intent x 5 different messages (3 patches, 2 questions)
-    console.log('Testing Section: chat_intent x 5 messages ...');
+    // 5. chat_intent x 10 different messages (5 patches, 5 questions)
+    console.log('Testing Section: chat_intent x 10 messages (5 patches, 5 questions) ...');
     const chatMessages = [
+      // 5 patch-yielding messages
       { label: 'Chat: Add 50k Catering', msg: 'Increase total catering budget by 50000' },
       { label: 'Chat: Guests to 250', msg: 'Change guest count to 250' },
       { label: 'Chat: Shift 1L Decor', msg: 'Shift 1 lakh from decor to photography' },
+      { label: 'Chat: Event Date', msg: 'Change event date to 2027-02-15' },
+      {
+        label: 'Chat: Dietary Split',
+        msg: 'Update vegetarian guests to 180 and non-vegetarian to 20',
+      },
+      // 5 advice / cultural questions
       { label: 'Chat: Question Attire', msg: 'What should guests wear for an evening Sangeet?' },
       {
         label: 'Chat: Question Favors',
         msg: 'What are traditional Maharashtrian wedding favors in Pune?',
       },
+      {
+        label: 'Chat: Question Sweets',
+        msg: 'Which traditional sweets are customary for a Maharashtrian wedding?',
+      },
+      {
+        label: 'Chat: Question Shehnai',
+        msg: 'What acoustic setup is recommended for a live Shehnai performance?',
+      },
+      {
+        label: 'Chat: Question Mandap',
+        msg: 'Which flowers are traditionally auspicious for the wedding mandap?',
+      },
     ];
 
     const chatMetric: ProbeMetric = {
-      section: 'Chat Intent (5 msgs)',
-      totalRuns: 5,
+      section: 'Chat Intent (10 msgs)',
+      totalRuns: chatMessages.length,
       validCount: 0,
       latencies: [],
       finishReasons: {},
@@ -525,24 +588,61 @@ async function main() {
           temperature: 0.2,
           timeoutMs: 20000,
         });
-        chatMetric.latencies.push(Date.now() - t0);
+        const elapsed = Date.now() - t0;
+        chatMetric.latencies.push(elapsed);
         const finish = res.finishReason || 'stop';
         chatMetric.finishReasons[finish] = (chatMetric.finishReasons[finish] || 0) + 1;
-        if (finish === 'length') chatMetric.truncations++;
+        if (finish === 'length') {
+          chatMetric.truncations++;
+          continue;
+        }
 
-        const parsed = extractJsonObject(res.text);
-        const val = validateOutput(parsed, ChatIntentSectionSchema, {
+        let parsed: any = null;
+        let parseErr: string | null = null;
+        try {
+          parsed = extractJsonObject(res.text);
+        } catch (e) {
+          parseErr = (e as Error).message;
+        }
+
+        if (parsed) {
+          const val = validateOutput(parsed, ChatIntentSectionSchema, {
+            profile: weddingPuneFixture,
+            userMessage: item.msg,
+          });
+          if (val.valid) {
+            chatMetric.validCount++;
+            continue;
+          }
+          parseErr = val.error || 'validation error';
+        }
+
+        console.log(`  [Chat Diagnostic] Initial attempt failed for "${item.msg}": ${parseErr}`);
+        chatMetric.repairs++;
+        const repairPrompt = buildRepairPrompt(prompt.user, res.text, parseErr || 'invalid output');
+        const repairRes = await jarvisProvider.generateJson({
+          system: prompt.system,
+          user: repairPrompt,
+          schemaName: 'chat_repair',
+          maxTokens: 2500,
+          temperature: 0.2,
+          timeoutMs: 15000,
+        });
+        const repairParsed = extractJsonObject(repairRes.text);
+        const repairVal = validateOutput(repairParsed, ChatIntentSectionSchema, {
           profile: weddingPuneFixture,
           userMessage: item.msg,
         });
-        if (val.valid) {
+        if (repairVal.valid) {
           chatMetric.validCount++;
+        } else {
+          console.log(`  [Chat Diagnostic] Repair also failed: ${repairVal.error}`);
         }
-      } catch {
-        // error
+      } catch (err: any) {
+        console.log(`  [Chat Diagnostic] Error on "${item.msg}": ${err.message}`);
       }
     }
-    newResults['Chat Intent (5 msgs)'] = chatMetric;
+    newResults['Chat Intent (10 msgs)'] = chatMetric;
 
     console.log('\nNEW PIPELINE RESULTS TABLE:');
     console.log(

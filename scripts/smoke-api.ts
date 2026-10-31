@@ -10,10 +10,16 @@ import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+const expectAi = process.argv.includes('--expect-ai') || process.env.EXPECT_AI === 'true';
+
+// Compute dynamic future date (today + 360 days) to avoid hardcoded past date expiration
+const futureDate = new Date();
+futureDate.setDate(futureDate.getDate() + 360);
+const futureDateStr = futureDate.toISOString().split('T')[0];
 
 const sampleProfile = {
   eventType: 'wedding',
-  eventDate: '2027-06-26',
+  eventDate: futureDateStr,
   cityTier: 'tier1',
   cityName: 'Pune',
   guestCount: 200,
@@ -67,15 +73,19 @@ async function ensureServerRunning(): Promise<ChildProcess | null> {
   }
 
   console.log(`Starting production server on ${BASE_URL} ...`);
+  const serverEnv: Record<string, string | undefined> = {
+    ...process.env,
+    PORT: '3000',
+  };
+  if (!expectAi && process.env.ASSERT_NO_KEYS === 'true') {
+    serverEnv.JARVISLABS_API_KEY = '';
+    serverEnv.GEMINI_API_KEY = '';
+    serverEnv.GEMINI_MODEL = '';
+    serverEnv.GOOGLE_PLACES_API_KEY = '';
+  }
+
   const server = spawn('pnpm', ['start'], {
-    env: {
-      ...process.env,
-      PORT: '3000',
-      JARVISLABS_API_KEY: '',
-      GEMINI_API_KEY: '',
-      GEMINI_MODEL: '',
-      GOOGLE_PLACES_API_KEY: '',
-    },
+    env: serverEnv as NodeJS.ProcessEnv,
     stdio: 'pipe',
   });
   server.stderr?.on('data', (d) => process.stderr.write(d));
@@ -100,7 +110,9 @@ async function ensureServerRunning(): Promise<ChildProcess | null> {
 
 async function runSmokeTests() {
   console.log(`\n======================================================`);
-  console.log(`  UTSAV PLANNER API SMOKE TESTS (No-Key Verification)`);
+  console.log(
+    `  UTSAV PLANNER API SMOKE TESTS (${expectAi ? 'Live AI Mode: --expect-ai' : 'Verification'})`
+  );
   console.log(`  Target: ${BASE_URL}`);
   console.log(`======================================================\n`);
 
@@ -185,10 +197,18 @@ async function runSmokeTests() {
       console.log(`  Themes generated: ${data.data?.themes?.length}`);
       console.log(`  Response:`, JSON.stringify(data, null, 2));
 
-      if (data.meta?.provider !== 'template') {
-        throw new Error(
-          `Expected meta.provider to be "template" when no keys are configured, got "${data.meta?.provider}"`
-        );
+      if (expectAi) {
+        if (data.meta?.provider === 'template') {
+          throw new Error(
+            `Expected meta.provider to be live AI ("jarvis" or "gemini") with --expect-ai, but got "template". Fallback reason: ${data.meta?.fallbackReason}`
+          );
+        }
+      } else if (process.env.ASSERT_NO_KEYS === 'true') {
+        if (data.meta?.provider !== 'template') {
+          throw new Error(
+            `Expected meta.provider to be "template" when no keys are configured, got "${data.meta?.provider}"`
+          );
+        }
       }
       if (!Array.isArray(data.data?.themes) || data.data.themes.length !== 3) {
         throw new Error(`Expected 3 theme ideas, got: ${data.data?.themes?.length}`);

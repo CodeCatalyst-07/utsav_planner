@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { JarvisProvider } from '@/server/ai/jarvis';
-import { GeminiProvider } from '@/server/ai/gemini';
+import { GeminiProvider, parseGemini429Details, parseGoDuration } from '@/server/ai/gemini';
 import { IdeasSectionSchema } from '@/server/ai/sections';
 import { extractJsonObject } from '@/server/ai/jsonExtract';
 import { ProviderError } from '@/server/ai/provider';
@@ -344,7 +344,7 @@ describe('Provider Contract Fixtures (tests/unit/server/contracts.test.ts)', () 
       } catch (err) {
         const pErr = err as ProviderError;
         expect(pErr.kind).toBe('rate_limit');
-        expect(pErr.retryAfterSeconds).toBe(57186);
+        expect(pErr.retryAfterSeconds).toBe(1800); // Daily quota capped at 30 min
         expect(pErr.isDailyQuota).toBe(true);
         expect(pErr.quotaMetric).toBe(
           'generativelanguage.googleapis.com/generate_content_free_tier_requests'
@@ -501,6 +501,71 @@ describe('Provider Contract Fixtures (tests/unit/server/contracts.test.ts)', () 
       expect(res.meta.provider).toBe('template');
       expect(res.data).toBeDefined();
       expect(res.meta.fallbackReason).toBeDefined();
+    });
+  });
+
+  describe('Gemini 429 Retry Delay & Go Duration Parsing', () => {
+    it('correctly parses Go-style durations', () => {
+      expect(parseGoDuration('52030s')).toBe(52030);
+      expect(parseGoDuration('14h27m10.105s')).toBe(52030);
+      expect(parseGoDuration('250ms')).toBe(1);
+      expect(parseGoDuration('5m30s')).toBe(330);
+      expect(parseGoDuration('45s')).toBe(45);
+      expect(parseGoDuration('1h')).toBe(3600);
+      expect(parseGoDuration('invalid')).toBeNull();
+      expect(parseGoDuration('')).toBeNull();
+    });
+
+    it('parses exact Gemini 429 probe payload with RetryInfo and daily quota cap', () => {
+      const probePayload = {
+        message:
+          'Resource has been exhausted (e.g. check quota). Please retry in 14h27m10.105477483s',
+        status: 429,
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric:
+                  'generativelanguage.googleapis.com/generate_content_free_tier_requests_per_day',
+                description: 'Daily request quota exceeded',
+              },
+            ],
+          },
+          {
+            '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+            retryDelay: '52030s',
+          },
+        ],
+      };
+
+      const parsed = parseGemini429Details(probePayload);
+      expect(parsed.rawParsedSeconds).toBe(52030);
+      expect(parsed.isDailyQuota).toBe(true);
+      expect(parsed.quotaMetric).toBe(
+        'generativelanguage.googleapis.com/generate_content_free_tier_requests_per_day'
+      );
+      // Daily quota capped at 30 minutes (1800s)
+      expect(parsed.retryAfterSeconds).toBe(1800);
+    });
+
+    it('parses text-only retry delay and caps rate-limit errors at 5 minutes', () => {
+      const rateLimitError = new Error(
+        'Resource has been exhausted: quota exceeded for quota metric "generate_content_requests_per_minute". Please retry in 5m30s.'
+      );
+      const parsed = parseGemini429Details(rateLimitError);
+      expect(parsed.rawParsedSeconds).toBe(330);
+      expect(parsed.isDailyQuota).toBe(false);
+      // Rate limit capped at 5 minutes (300s)
+      expect(parsed.retryAfterSeconds).toBe(300);
+    });
+
+    it('parses sub-second millisecond retry delay accurately', () => {
+      const msError = new Error('Rate limit reached. Please retry in 250ms');
+      const parsed = parseGemini429Details(msError);
+      expect(parsed.rawParsedSeconds).toBe(1);
+      expect(parsed.retryAfterSeconds).toBe(1);
+      expect(parsed.isDailyQuota).toBe(false);
     });
   });
 });
